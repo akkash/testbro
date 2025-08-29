@@ -1,0 +1,144 @@
+version: '3.8'
+
+# Docker Compose Override for Staging Environment
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.staging.yml up
+
+services:
+  testbro-backend:
+    environment:
+      NODE_ENV: staging
+      LOG_LEVEL: info
+      ENABLE_DEBUG_ROUTES: true
+      ENABLE_API_DOCS: true
+      
+    # Staging-specific resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    
+    # Staging-specific health checks
+    healthcheck:
+      interval: 20s
+      timeout: 8s
+      retries: 3
+      start_period: 45s
+    
+    # Staging labels for monitoring
+    labels:
+      - "environment=staging"
+      - "service=backend"
+      - "monitoring=enabled"
+
+  testbro-frontend:
+    environment:
+      NODE_ENV: staging
+      
+    # Staging-specific build args
+    build:
+      args:
+        VITE_API_URL: https://api-staging.testbro.ai
+        VITE_ENVIRONMENT: staging
+        VITE_ENABLE_ANALYTICS: false
+        VITE_ENABLE_DEBUG: true
+    
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    labels:
+      - "environment=staging"
+      - "service=frontend"
+
+  postgres:
+    environment:
+      POSTGRES_DB: testbro_staging
+      
+    # Staging database configuration
+    command: >
+      postgres -c max_connections=100
+               -c shared_buffers=256MB
+               -c effective_cache_size=1GB
+               -c maintenance_work_mem=64MB
+               -c checkpoint_completion_target=0.9
+               -c wal_buffers=16MB
+               -c default_statistics_target=100
+               -c random_page_cost=1.1
+               -c effective_io_concurrency=200
+    
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  redis:
+    command: >
+      redis-server --appendonly yes
+                   --maxmemory 512mb
+                   --maxmemory-policy allkeys-lru
+                   --save 900 1
+                   --save 300 10
+                   --save 60 10000
+    
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Staging-specific monitoring services
+  prometheus-staging:
+    image: prom/prometheus:latest
+    container_name: testbro-prometheus-staging
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus-staging.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_staging_data:/prometheus
+    networks:
+      - testbro-network
+    labels:
+      - "environment=staging"
+      - "service=monitoring"
+
+  grafana-staging:
+    image: grafana/grafana:latest
+    container_name: testbro-grafana-staging
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_STAGING_PASSWORD:-staging_admin}
+      GF_INSTALL_PLUGINS: redis-datasource
+      GF_SERVER_DOMAIN: grafana-staging.testbro.ai
+      GF_SERVER_ROOT_URL: https://grafana-staging.testbro.ai
+    volumes:
+      - grafana_staging_data:/var/lib/grafana
+      - ./monitoring/grafana/staging:/etc/grafana/provisioning
+    ports:
+      - "3031:3000"
+    networks:
+      - testbro-network
+    depends_on:
+      - prometheus-staging
+
+volumes:
+  prometheus_staging_data:
+    driver: local
+  grafana_staging_data:
+    driver: local

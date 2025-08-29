@@ -1,0 +1,334 @@
+name: Backup and Disaster Recovery
+
+on:
+  schedule:
+    # Daily backups at 2 AM UTC
+    - cron: '0 2 * * *'
+    # Weekly full backups on Sundays at 1 AM UTC
+    - cron: '0 1 * * 0'
+  workflow_dispatch:
+    inputs:
+      backup_type:
+        description: 'Type of backup to perform'
+        required: true
+        default: 'incremental'
+        type: choice
+        options:
+          - incremental
+          - full
+          - database_only
+          - files_only
+
+jobs:
+  backup-production:
+    name: Backup Production Data
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup AWS CLI
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Determine backup type
+      id: backup_type
+      run: |
+        if [[ "${{ github.event.inputs.backup_type }}" != "" ]]; then
+          echo "type=${{ github.event.inputs.backup_type }}" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.event.schedule }}" == "0 1 * * 0" ]]; then
+          echo "type=full" >> $GITHUB_OUTPUT
+        else
+          echo "type=incremental" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Create database backup
+      if: steps.backup_type.outputs.type == 'full' || steps.backup_type.outputs.type == 'incremental' || steps.backup_type.outputs.type == 'database_only'
+      run: |
+        # Create timestamp
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        BACKUP_TYPE="${{ steps.backup_type.outputs.type }}"
+        
+        # SSH to production server and create database backup
+        ssh -i ~/.ssh/production_key ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+          cd /opt/testbro-production
+          
+          # Create backup directory
+          mkdir -p ./backups/${TIMESTAMP}
+          
+          # Database backup
+          docker-compose exec -T postgres pg_dump -U testbro -d testbro --verbose > ./backups/${TIMESTAMP}/database_${BACKUP_TYPE}_${TIMESTAMP}.sql
+          
+          # Compress database backup
+          gzip ./backups/${TIMESTAMP}/database_${BACKUP_TYPE}_${TIMESTAMP}.sql
+          
+          # Redis backup
+          docker-compose exec -T redis redis-cli --rdb - > ./backups/${TIMESTAMP}/redis_${BACKUP_TYPE}_${TIMESTAMP}.rdb
+          
+          # Application logs backup
+          tar -czf ./backups/${TIMESTAMP}/logs_${BACKUP_TYPE}_${TIMESTAMP}.tar.gz logs/
+          
+          # Configuration backup
+          cp .env ./backups/${TIMESTAMP}/env_${BACKUP_TYPE}_${TIMESTAMP}.backup
+          cp docker-compose.yml ./backups/${TIMESTAMP}/
+          
+          echo "Database backup completed: ${TIMESTAMP}"
+        EOF
+      env:
+        TIMESTAMP: ${{ steps.backup_type.outputs.timestamp }}
+        BACKUP_TYPE: ${{ steps.backup_type.outputs.type }}
+    
+    - name: Create file system backup
+      if: steps.backup_type.outputs.type == 'full' || steps.backup_type.outputs.type == 'files_only'
+      run: |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        BACKUP_TYPE="${{ steps.backup_type.outputs.type }}"
+        
+        # Create full file system backup for production files
+        ssh -i ~/.ssh/production_key ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+          cd /opt/testbro-production
+          
+          # Backup uploaded files
+          if [ -d "uploads" ]; then
+            tar -czf ./backups/${TIMESTAMP}/uploads_${BACKUP_TYPE}_${TIMESTAMP}.tar.gz uploads/
+          fi
+          
+          # Backup SSL certificates
+          if [ -d "ssl" ]; then
+            tar -czf ./backups/${TIMESTAMP}/ssl_${BACKUP_TYPE}_${TIMESTAMP}.tar.gz ssl/
+          fi
+          
+          # Backup monitoring configurations
+          if [ -d "monitoring" ]; then
+            tar -czf ./backups/${TIMESTAMP}/monitoring_${BACKUP_TYPE}_${TIMESTAMP}.tar.gz monitoring/
+          fi
+          
+          echo "File system backup completed: ${TIMESTAMP}"
+        EOF
+    
+    - name: Upload backup to AWS S3
+      run: |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        BACKUP_TYPE="${{ steps.backup_type.outputs.type }}"
+        
+        # Download backup from production server
+        scp -i ~/.ssh/production_key -r ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}:/opt/testbro-production/backups/${TIMESTAMP} ./local_backup/
+        
+        # Upload to S3 with lifecycle policies
+        aws s3 sync ./local_backup/ s3://${{ secrets.BACKUP_S3_BUCKET }}/testbro-production/${TIMESTAMP}/ \
+          --storage-class STANDARD_IA \
+          --metadata backup-type=${BACKUP_TYPE},created-date=${TIMESTAMP}
+        
+        # Create backup manifest
+        cat > backup_manifest.json << EOF
+        {
+          "timestamp": "${TIMESTAMP}",
+          "type": "${BACKUP_TYPE}",
+          "s3_location": "s3://${{ secrets.BACKUP_S3_BUCKET }}/testbro-production/${TIMESTAMP}/",
+          "created_by": "github-actions",
+          "workflow_run": "${{ github.run_id }}",
+          "git_sha": "${{ github.sha }}",
+          "files": [
+            "database_${BACKUP_TYPE}_${TIMESTAMP}.sql.gz",
+            "redis_${BACKUP_TYPE}_${TIMESTAMP}.rdb",
+            "logs_${BACKUP_TYPE}_${TIMESTAMP}.tar.gz",
+            "env_${BACKUP_TYPE}_${TIMESTAMP}.backup"
+          ]
+        }
+        EOF
+        
+        # Upload manifest
+        aws s3 cp backup_manifest.json s3://${{ secrets.BACKUP_S3_BUCKET }}/testbro-production/manifests/backup_${TIMESTAMP}.json
+    
+    - name: Cleanup old backups
+      run: |
+        # Keep last 30 daily backups and 12 weekly backups
+        ssh -i ~/.ssh/production_key ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+          cd /opt/testbro-production/backups
+          
+          # Remove backups older than 30 days
+          find . -type d -name "*" -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+          
+          echo "Local backup cleanup completed"
+        EOF
+        
+        # Cleanup S3 backups older than 90 days for incremental, 1 year for full
+        if [[ "${{ steps.backup_type.outputs.type }}" == "incremental" ]]; then
+          CUTOFF_DATE=$(date -d "90 days ago" +%Y%m%d)
+        else
+          CUTOFF_DATE=$(date -d "365 days ago" +%Y%m%d)
+        fi
+        
+        # List and delete old backups from S3
+        aws s3api list-objects-v2 \
+          --bucket ${{ secrets.BACKUP_S3_BUCKET }} \
+          --prefix "testbro-production/" \
+          --query "Contents[?LastModified<=\`${CUTOFF_DATE}T00:00:00.000Z\`].[Key]" \
+          --output text | xargs -I {} aws s3 rm s3://${{ secrets.BACKUP_S3_BUCKET }}/{}
+    
+    - name: Verify backup integrity
+      run: |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        
+        # Test database backup integrity
+        if [ -f "./local_backup/database_${{ steps.backup_type.outputs.type }}_${TIMESTAMP}.sql.gz" ]; then
+          gunzip -t "./local_backup/database_${{ steps.backup_type.outputs.type }}_${TIMESTAMP}.sql.gz"
+          echo "Database backup integrity verified"
+        fi
+        
+        # Test compressed files
+        for file in ./local_backup/*.tar.gz; do
+          if [ -f "$file" ]; then
+            tar -tzf "$file" > /dev/null
+            echo "Archive integrity verified: $file"
+          fi
+        done
+    
+    - name: Send backup notification
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        text: |
+          📦 Production Backup Status: ${{ job.status }}
+          Type: ${{ steps.backup_type.outputs.type }}
+          Timestamp: $(date +%Y-%m-%d\ %H:%M:%S)
+          S3 Location: s3://${{ secrets.BACKUP_S3_BUCKET }}/testbro-production/
+          Workflow: ${{ github.workflow }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  test-disaster-recovery:
+    name: Test Disaster Recovery
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 1 * * 0' # Weekly on Sundays
+    needs: backup-production
+    
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup AWS CLI
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Download latest backup
+      run: |
+        # Get latest backup from S3
+        LATEST_BACKUP=$(aws s3 ls s3://${{ secrets.BACKUP_S3_BUCKET }}/testbro-production/ --recursive | sort | tail -n 1 | awk '{print $4}')
+        
+        if [ -n "$LATEST_BACKUP" ]; then
+          BACKUP_DIR=$(dirname "$LATEST_BACKUP")
+          aws s3 sync s3://${{ secrets.BACKUP_S3_BUCKET }}/$BACKUP_DIR/ ./disaster_recovery_test/
+          echo "Downloaded backup: $BACKUP_DIR"
+        else
+          echo "No backup found"
+          exit 1
+        fi
+    
+    - name: Test database restoration
+      run: |
+        # Setup test PostgreSQL container
+        docker run -d --name postgres-test \
+          -e POSTGRES_PASSWORD=test_password \
+          -e POSTGRES_USER=testbro \
+          -e POSTGRES_DB=testbro_test \
+          -p 5433:5432 \
+          postgres:15-alpine
+        
+        # Wait for PostgreSQL to be ready
+        sleep 30
+        
+        # Find and restore database backup
+        DB_BACKUP=$(find ./disaster_recovery_test -name "database_*.sql.gz" | head -1)
+        if [ -f "$DB_BACKUP" ]; then
+          gunzip -c "$DB_BACKUP" | docker exec -i postgres-test psql -U testbro -d testbro_test
+          echo "Database restoration test successful"
+        else
+          echo "Database backup not found"
+          exit 1
+        fi
+        
+        # Verify database content
+        docker exec postgres-test psql -U testbro -d testbro_test -c "\dt" | grep -q "users\|projects\|test_cases" || exit 1
+        
+        # Cleanup
+        docker stop postgres-test
+        docker rm postgres-test
+    
+    - name: Test application startup with restored data
+      run: |
+        # Create temporary environment with restored data
+        mkdir -p ./dr_test_env
+        
+        # Copy docker-compose and modify for testing
+        cp docker-compose.yml ./dr_test_env/
+        sed -i 's/testbro-backend/testbro-backend-dr-test/g' ./dr_test_env/docker-compose.yml
+        sed -i 's/testbro-frontend/testbro-frontend-dr-test/g' ./dr_test_env/docker-compose.yml
+        sed -i 's/5432:5432/5434:5432/g' ./dr_test_env/docker-compose.yml
+        sed -i 's/6379:6379/6380:6379/g' ./dr_test_env/docker-compose.yml
+        sed -i 's/3001:3001/3002:3001/g' ./dr_test_env/docker-compose.yml
+        sed -i 's/3000:80/3003:80/g' ./dr_test_env/docker-compose.yml
+        
+        # Create test environment file
+        cat > ./dr_test_env/.env << EOF
+        NODE_ENV=test
+        SUPABASE_URL=${{ secrets.SUPABASE_URL_TEST }}
+        SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY_TEST }}
+        JWT_SECRET=dr_test_secret
+        REDIS_PASSWORD=dr_test_redis
+        POSTGRES_PASSWORD=dr_test_postgres
+        EOF
+        
+        # Start test environment
+        cd ./dr_test_env
+        docker-compose up -d postgres redis
+        
+        # Wait for services
+        sleep 30
+        
+        # Restore database to test environment
+        DB_BACKUP=$(find ../disaster_recovery_test -name "database_*.sql.gz" | head -1)
+        if [ -f "$DB_BACKUP" ]; then
+          gunzip -c "$DB_BACKUP" | docker-compose exec -T postgres psql -U testbro -d testbro
+        fi
+        
+        # Start application services
+        docker-compose up -d testbro-backend testbro-frontend
+        
+        # Wait for services to be ready
+        timeout 120s bash -c 'until curl -f http://localhost:3002/health; do sleep 5; done'
+        
+        # Basic functionality tests
+        curl -f http://localhost:3002/health || exit 1
+        curl -f http://localhost:3002/api/metrics || exit 1
+        
+        # Cleanup
+        docker-compose down -v
+        
+        echo "Disaster recovery test completed successfully"
+    
+    - name: Send DR test notification
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        text: |
+          🔄 Disaster Recovery Test: ${{ job.status }}
+          Date: $(date +%Y-%m-%d\ %H:%M:%S)
+          Result: Database restoration and application startup tested
+          Status: ${{ job.status == 'success' && 'PASSED ✅' || 'FAILED ❌' }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

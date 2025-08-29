@@ -1,0 +1,79 @@
+# Artillery Load Test Configuration
+config:
+  target: 'http://localhost:3001'
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 120
+      arrivalRate: 10
+      name: "Ramp up load"
+    - duration: 300
+      arrivalRate: 20
+      name: "Sustained load"
+    - duration: 60
+      arrivalRate: 50
+      name: "Peak load"
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+  processor: "./load-test-processor.js"
+
+scenarios:
+  - name: "Health Check"
+    weight: 10
+    flow:
+      - get:
+          url: "/health"
+          expect:
+            - statusCode: 200
+
+  - name: "API Authentication"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "test@example.com"
+            password: "testpassword"
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      - get:
+          url: "/api/dashboard/stats"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+
+  - name: "Metrics Endpoints"
+    weight: 15
+    flow:
+      - get:
+          url: "/api/metrics"
+          expect:
+            - statusCode: 200
+      - get:
+          url: "/metrics"
+          expect:
+            - statusCode: 200
+
+  - name: "APM Endpoints"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/apm/performance"
+          expect:
+            - statusCode: 200
+      - get:
+          url: "/api/apm/errors"
+          expect:
+            - statusCode: 200
+
+  - name: "WebSocket Connection"
+    weight: 5
+    flow:
+      - get:
+          url: "/api/websocket/status"
+          expect:
+            - statusCode: 200

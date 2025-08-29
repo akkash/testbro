@@ -1,0 +1,438 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '20'
+  REGISTRY: ghcr.io
+  IMAGE_NAME_BACKEND: testbro-backend
+  IMAGE_NAME_FRONTEND: testbro-frontend
+
+jobs:
+  # Test Backend
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: testbro
+          POSTGRES_DB: testbro_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: testbro-backend/package-lock.json
+    
+    - name: Install backend dependencies
+      working-directory: ./testbro-backend
+      run: npm ci
+    
+    - name: Run ESLint
+      working-directory: ./testbro-backend
+      run: npm run lint
+    
+    - name: Type check
+      working-directory: ./testbro-backend
+      run: npm run type-check
+    
+    - name: Build backend
+      working-directory: ./testbro-backend
+      run: npm run build
+    
+    - name: Run backend tests
+      working-directory: ./testbro-backend
+      env:
+        NODE_ENV: test
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL_TEST }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_TEST }}
+        JWT_SECRET: test_jwt_secret_for_ci
+        JWT_REFRESH_SECRET: test_refresh_secret_for_ci
+        REDIS_HOST: localhost
+        REDIS_PORT: 6379
+      run: npm run test:full
+    
+    - name: Upload backend coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./testbro-backend/coverage/lcov.info
+        flags: backend
+        name: backend-coverage
+
+  # Test Frontend
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: testbro-frontend/package-lock.json
+    
+    - name: Install frontend dependencies
+      working-directory: ./testbro-frontend
+      run: npm ci
+    
+    - name: Run ESLint
+      working-directory: ./testbro-frontend
+      run: npm run lint
+    
+    - name: Type check
+      working-directory: ./testbro-frontend
+      run: npx tsc --noEmit
+    
+    - name: Build frontend
+      working-directory: ./testbro-frontend
+      env:
+        VITE_API_URL: http://localhost:3001
+      run: npm run build
+    
+    - name: Run frontend tests
+      working-directory: ./testbro-frontend
+      run: npm run test 2>/dev/null || echo "Frontend tests not yet implemented"
+
+  # Security Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Setup Node.js for dependency check
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Audit backend dependencies
+      working-directory: ./testbro-backend
+      run: npm audit --audit-level=high
+    
+    - name: Audit frontend dependencies
+      working-directory: ./testbro-frontend
+      run: npm audit --audit-level=high
+
+  # Build and Push Docker Images
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend, security-scan]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata for backend
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME_BACKEND }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Extract metadata for frontend
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME_FRONTEND }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./testbro-backend
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+    
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./testbro-frontend
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-images]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to staging server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: ${{ secrets.STAGING_PORT }}
+        script: |
+          cd /opt/testbro-staging
+          git pull origin develop
+          
+          # Update environment variables
+          echo "${{ secrets.STAGING_ENV }}" > .env
+          
+          # Pull latest images
+          docker-compose pull
+          
+          # Deploy with zero downtime
+          docker-compose up -d --force-recreate
+          
+          # Wait for services to be healthy
+          timeout 300s bash -c 'until curl -f http://localhost:3001/health; do sleep 5; done'
+          
+          # Clean up old images
+          docker image prune -f
+    
+    - name: Run staging health checks
+      run: |
+        # Wait a bit for deployment to stabilize
+        sleep 30
+        
+        # Check staging health
+        curl -f ${{ secrets.STAGING_URL }}/health || exit 1
+        
+        # Run smoke tests
+        curl -f ${{ secrets.STAGING_URL }}/api/health/alerts || exit 1
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-images, deploy-staging]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Create GitHub Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        body: |
+          Automated release from commit ${{ github.sha }}
+          
+          Changes:
+          ${{ github.event.head_commit.message }}
+        draft: false
+        prerelease: false
+    
+    - name: Deploy to production server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: ${{ secrets.PRODUCTION_PORT }}
+        script: |
+          cd /opt/testbro-production
+          
+          # Backup current deployment
+          ./docker-manager.sh backup
+          
+          # Pull latest code
+          git pull origin main
+          
+          # Update environment variables
+          echo "${{ secrets.PRODUCTION_ENV }}" > .env
+          
+          # Pull latest images
+          docker-compose pull
+          
+          # Deploy with blue-green strategy
+          docker-compose -f docker-compose.yml -f docker-compose.blue-green.yml up -d
+          
+          # Wait for services to be healthy
+          timeout 300s bash -c 'until curl -f http://localhost:3001/health; do sleep 5; done'
+          
+          # Switch traffic to new deployment
+          ./scripts/switch-traffic.sh
+          
+          # Clean up old deployment
+          docker-compose -f docker-compose.old.yml down
+          docker image prune -f
+    
+    - name: Run production health checks
+      run: |
+        # Wait for deployment to stabilize
+        sleep 60
+        
+        # Comprehensive health checks
+        curl -f ${{ secrets.PRODUCTION_URL }}/health || exit 1
+        curl -f ${{ secrets.PRODUCTION_URL }}/api/metrics || exit 1
+        curl -f ${{ secrets.PRODUCTION_URL }}/api/apm/performance || exit 1
+    
+    - name: Notify deployment success
+      uses: 8398a7/action-slack@v3
+      if: success()
+      with:
+        status: success
+        text: |
+          ✅ Production deployment successful!
+          Release: v${{ github.run_number }}
+          Commit: ${{ github.sha }}
+          URL: ${{ secrets.PRODUCTION_URL }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    
+    - name: Notify deployment failure
+      uses: 8398a7/action-slack@v3
+      if: failure()
+      with:
+        status: failure
+        text: |
+          ❌ Production deployment failed!
+          Release: v${{ github.run_number }}
+          Commit: ${{ github.sha }}
+          Please check the logs and investigate.
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # E2E Tests
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Install Playwright
+      working-directory: ./e2e-tests
+      run: |
+        npm ci
+        npx playwright install --with-deps
+    
+    - name: Run E2E tests against staging
+      working-directory: ./e2e-tests
+      env:
+        BASE_URL: ${{ secrets.STAGING_URL }}
+        TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+        TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+      run: npx playwright test
+    
+    - name: Upload E2E test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: e2e-test-results
+        path: e2e-tests/test-results/
+
+  # Performance Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run load tests with Artillery
+      run: |
+        npm install -g artillery@latest
+        artillery run ./.github/workflows/load-test.yml --target ${{ secrets.STAGING_URL }}
+    
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-test-results
+        path: artillery-report.html

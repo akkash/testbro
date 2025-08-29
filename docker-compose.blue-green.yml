@@ -1,0 +1,95 @@
+version: '3.8'
+
+# Blue-Green Deployment Configuration
+# This file defines the "green" environment for zero-downtime deployments
+services:
+  # Green Backend
+  testbro-backend-green:
+    build:
+      context: ./testbro-backend
+      dockerfile: Dockerfile
+    container_name: testbro-backend-green
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      
+      # Database Configuration (shared with blue)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      
+      # Redis Configuration (shared with blue)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      
+      # OpenRouter AI Configuration
+      OPENROUTER_KEY: ${OPENROUTER_KEY}
+      
+      # Email Configuration
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@testbro.ai}
+      
+      # APM Configuration
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY}
+      SENTRY_DSN: ${SENTRY_DSN}
+      
+      # Frontend URL for CORS
+      FRONTEND_URL: http://localhost:3000
+      
+    volumes:
+      - backend_logs_green:/app/logs
+      - backend_uploads:/app/uploads  # Shared uploads volume
+    ports:
+      - "3002:3001"  # Different port for green environment
+    networks:
+      - testbro-network
+    depends_on:
+      - redis
+      # Note: postgres is shared between blue and green
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const options = { hostname: 'localhost', port: 3001, path: '/health', timeout: 5000 }; const req = http.request(options, (res) => { if (res.statusCode === 200) process.exit(0); else process.exit(1); }); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Green Frontend
+  testbro-frontend-green:
+    build:
+      context: ./testbro-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:3002  # Points to green backend
+    container_name: testbro-frontend-green
+    restart: unless-stopped
+    ports:
+      - "3004:80"  # Different port for green environment
+    networks:
+      - testbro-network
+    depends_on:
+      testbro-backend-green:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Green-specific volumes
+volumes:
+  backend_logs_green:
+    driver: local
+
+# Use existing network and volumes from main docker-compose.yml
+networks:
+  testbro-network:
+    external: true

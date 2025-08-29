@@ -1,0 +1,365 @@
+version: '3.8'
+
+# Traefik Load Balancer Configuration for TestBro.ai
+# Provides automatic service discovery, SSL termination, and load balancing
+
+services:
+  # Traefik Load Balancer
+  traefik:
+    image: traefik:v3.0
+    container_name: testbro-traefik
+    restart: unless-stopped
+    
+    command:
+      # Enable Docker provider
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=traefik-public"
+      
+      # Configure entrypoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      
+      # HTTP to HTTPS redirect
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      
+      # SSL configuration
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@testbro.ai"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      
+      # Enable API and dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      
+      # Logging
+      - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/logs/access.log"
+      
+      # Metrics
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
+      
+      # Health check
+      - "--ping=true"
+      
+      # Load balancing
+      - "--providers.docker.defaultRule=PathPrefix(`/`)"
+      
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard (should be protected in production)
+    
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+      - traefik_logs:/logs
+    
+    networks:
+      - traefik-public
+      - testbro-network
+    
+    labels:
+      # Enable Traefik for itself
+      - "traefik.enable=true"
+      
+      # Dashboard configuration
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.testbro.ai`)"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
+      
+      # Dashboard authentication
+      - "traefik.http.middlewares.dashboard-auth.basicauth.users=admin:$$2y$$10$$HASH_HERE"
+      
+      # Security headers
+      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.security-headers.headers.sslRedirect=true"
+      - "traefik.http.middlewares.security-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.security-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
+      
+      # Rate limiting
+      - "traefik.http.middlewares.rate-limit.ratelimit.burst=100"
+      - "traefik.http.middlewares.rate-limit.ratelimit.average=50"
+      
+      # IP whitelist for admin access
+      - "traefik.http.middlewares.admin-whitelist.ipwhitelist.sourcerange=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+  # Backend Service with Traefik labels
+  testbro-backend:
+    image: ${DOCKER_REGISTRY:-ghcr.io/testbro-ai}/testbro-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://testbro:${POSTGRES_PASSWORD}@postgres:5432/testbro_production
+      JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    
+    volumes:
+      - app_logs:/app/logs
+    
+    networks:
+      - testbro-network
+      - traefik-public
+    
+    depends_on:
+      - postgres
+      - redis
+    
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      
+      # HTTP router for API
+      - "traefik.http.routers.testbro-api.rule=Host(`testbro.ai`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.testbro-api.entrypoints=websecure"
+      - "traefik.http.routers.testbro-api.tls=true"
+      - "traefik.http.routers.testbro-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.testbro-api.service=testbro-backend"
+      
+      # API subdomain
+      - "traefik.http.routers.testbro-api-subdomain.rule=Host(`api.testbro.ai`)"
+      - "traefik.http.routers.testbro-api-subdomain.entrypoints=websecure"
+      - "traefik.http.routers.testbro-api-subdomain.tls=true"
+      - "traefik.http.routers.testbro-api-subdomain.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.testbro-api-subdomain.service=testbro-backend"
+      
+      # Service configuration
+      - "traefik.http.services.testbro-backend.loadbalancer.server.port=3001"
+      - "traefik.http.services.testbro-backend.loadbalancer.server.scheme=http"
+      - "traefik.http.services.testbro-backend.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.testbro-backend.loadbalancer.healthcheck.interval=30s"
+      - "traefik.http.services.testbro-backend.loadbalancer.healthcheck.timeout=5s"
+      
+      # Middlewares
+      - "traefik.http.routers.testbro-api.middlewares=security-headers,rate-limit,api-auth"
+      - "traefik.http.routers.testbro-api-subdomain.middlewares=security-headers,rate-limit,api-auth"
+      
+      # API rate limiting
+      - "traefik.http.middlewares.api-rate-limit.ratelimit.burst=200"
+      - "traefik.http.middlewares.api-rate-limit.ratelimit.average=100"
+      
+      # API authentication middleware (optional)
+      - "traefik.http.middlewares.api-auth.forwardauth.address=http://auth-service:3002/auth"
+      - "traefik.http.middlewares.api-auth.forwardauth.authResponseHeaders=X-User-Id,X-User-Role"
+
+  # Frontend Service with Traefik labels
+  testbro-frontend:
+    image: ${DOCKER_REGISTRY:-ghcr.io/testbro-ai}/testbro-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    
+    networks:
+      - traefik-public
+    
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      
+      # HTTP router for frontend
+      - "traefik.http.routers.testbro-frontend.rule=Host(`testbro.ai`)"
+      - "traefik.http.routers.testbro-frontend.entrypoints=websecure"
+      - "traefik.http.routers.testbro-frontend.tls=true"
+      - "traefik.http.routers.testbro-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.testbro-frontend.service=testbro-frontend"
+      - "traefik.http.routers.testbro-frontend.priority=1"  # Lower priority than API
+      
+      # WWW redirect
+      - "traefik.http.routers.testbro-www.rule=Host(`www.testbro.ai`)"
+      - "traefik.http.routers.testbro-www.entrypoints=websecure"
+      - "traefik.http.routers.testbro-www.tls=true"
+      - "traefik.http.routers.testbro-www.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.testbro-www.middlewares=www-redirect"
+      
+      # WWW redirect middleware
+      - "traefik.http.middlewares.www-redirect.redirectregex.regex=^https://www\\.(.+)"
+      - "traefik.http.middlewares.www-redirect.redirectregex.replacement=https://$${1}"
+      - "traefik.http.middlewares.www-redirect.redirectregex.permanent=true"
+      
+      # Service configuration
+      - "traefik.http.services.testbro-frontend.loadbalancer.server.port=80"
+      - "traefik.http.services.testbro-frontend.loadbalancer.server.scheme=http"
+      - "traefik.http.services.testbro-frontend.loadbalancer.healthcheck.path=/"
+      - "traefik.http.services.testbro-frontend.loadbalancer.healthcheck.interval=30s"
+      
+      # Middlewares
+      - "traefik.http.routers.testbro-frontend.middlewares=security-headers,compression"
+      
+      # Compression middleware
+      - "traefik.http.middlewares.compression.compress=true"
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    
+    environment:
+      POSTGRES_DB: testbro_production
+      POSTGRES_USER: testbro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_SHARED_PRELOAD_LIBRARIES: pg_stat_statements
+    
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+    
+    networks:
+      - testbro-network
+    
+    command: >
+      postgres -c max_connections=200
+               -c shared_buffers=1GB
+               -c effective_cache_size=3GB
+               -c maintenance_work_mem=256MB
+               -c checkpoint_completion_target=0.9
+               -c wal_buffers=16MB
+               -c default_statistics_target=100
+               -c random_page_cost=1.1
+               -c effective_io_concurrency=200
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    
+    command: >
+      redis-server --appendonly yes
+                   --maxmemory 1gb
+                   --maxmemory-policy allkeys-lru
+                   --save 900 1
+                   --save 300 10
+                   --save 60 10000
+    
+    volumes:
+      - redis_data:/data
+    
+    networks:
+      - testbro-network
+
+  # Grafana with Traefik
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_DOMAIN: grafana.testbro.ai
+      GF_SERVER_ROOT_URL: https://grafana.testbro.ai
+    
+    volumes:
+      - grafana_data:/var/lib/grafana
+    
+    networks:
+      - testbro-network
+      - traefik-public
+    
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      
+      # Grafana router
+      - "traefik.http.routers.grafana.rule=Host(`grafana.testbro.ai`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.grafana.service=grafana"
+      - "traefik.http.routers.grafana.middlewares=security-headers,admin-whitelist"
+      
+      # Service configuration
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # Prometheus with Traefik
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.external-url=https://prometheus.testbro.ai'
+    
+    volumes:
+      - ./monitoring/prometheus-traefik.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    
+    networks:
+      - testbro-network
+      - traefik-public
+    
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      
+      # Prometheus router
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.testbro.ai`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.prometheus.service=prometheus"
+      - "traefik.http.routers.prometheus.middlewares=security-headers,admin-whitelist"
+      
+      # Service configuration
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+networks:
+  traefik-public:
+    external: true
+  testbro-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  postgres_backups:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  traefik_letsencrypt:
+    driver: local
+  traefik_logs:
+    driver: local
+  app_logs:
+    driver: local

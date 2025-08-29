@@ -1,0 +1,393 @@
+version: '3.8'
+
+# Docker Swarm Stack Configuration for Auto-scaling
+# Deploy with: docker stack deploy -c docker-swarm-stack.yml testbro
+
+services:
+  # Load Balancer (Nginx)
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/production/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl:ro
+      - nginx_cache:/var/cache/nginx
+      - nginx_logs:/var/log/nginx
+    networks:
+      - testbro-network
+      - traefik-public
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.testbro.rule=Host(`testbro.ai`)"
+        - "traefik.http.routers.testbro.tls=true"
+        - "traefik.http.services.testbro.loadbalancer.server.port=80"
+
+  # Backend Service with Auto-scaling
+  testbro-backend:
+    image: ${DOCKER_REGISTRY:-ghcr.io/testbro-ai}/testbro-backend:${IMAGE_TAG:-latest}
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://testbro:${POSTGRES_PASSWORD}@postgres:5432/testbro_production
+      JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - testbro-network
+    depends_on:
+      - postgres
+      - redis
+    deploy:
+      replicas: 3
+      placement:
+        constraints:
+          - node.labels.type == app
+        max_replicas_per_node: 2
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      # Auto-scaling configuration (when using Docker Swarm with external autoscaler)
+      labels:
+        - "autoscaler.enable=true"
+        - "autoscaler.min_replicas=2"
+        - "autoscaler.max_replicas=10"
+        - "autoscaler.target_cpu=70"
+        - "autoscaler.target_memory=80"
+        - "autoscaler.scale_up_cooldown=300s"
+        - "autoscaler.scale_down_cooldown=600s"
+
+  # Frontend Service
+  testbro-frontend:
+    image: ${DOCKER_REGISTRY:-ghcr.io/testbro-ai}/testbro-frontend:${IMAGE_TAG:-latest}
+    networks:
+      - testbro-network
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.type == app
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        - "autoscaler.enable=true"
+        - "autoscaler.min_replicas=2"
+        - "autoscaler.max_replicas=5"
+        - "autoscaler.target_cpu=60"
+        - "autoscaler.target_memory=70"
+
+  # PostgreSQL Database (Primary)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: testbro_production
+      POSTGRES_USER: testbro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_SHARED_PRELOAD_LIBRARIES: pg_stat_statements
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+    networks:
+      - testbro-network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.type == database
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 300s
+    command: >
+      postgres -c max_connections=200
+               -c shared_buffers=1GB
+               -c effective_cache_size=3GB
+               -c maintenance_work_mem=256MB
+               -c checkpoint_completion_target=0.9
+               -c wal_buffers=16MB
+               -c default_statistics_target=100
+               -c random_page_cost=1.1
+               -c effective_io_concurrency=200
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    command: >
+      redis-server --appendonly yes
+                   --maxmemory 1gb
+                   --maxmemory-policy allkeys-lru
+                   --save 900 1
+                   --save 300 10
+                   --save 60 10000
+    volumes:
+      - redis_data:/data
+    networks:
+      - testbro-network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.type == cache
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # Monitoring - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus-swarm.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - testbro-network
+      - monitoring
+    ports:
+      - "9090:9090"
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Monitoring - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_INSTALL_PLUGINS: redis-datasource,grafana-clock-panel
+      GF_SERVER_DOMAIN: grafana.testbro.ai
+      GF_SERVER_ROOT_URL: https://grafana.testbro.ai
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    networks:
+      - testbro-network
+      - monitoring
+    ports:
+      - "3000:3000"
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # Auto-scaler Service (Custom implementation)
+  autoscaler:
+    image: ${DOCKER_REGISTRY:-ghcr.io/testbro-ai}/testbro-autoscaler:${IMAGE_TAG:-latest}
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      PROMETHEUS_URL: http://prometheus:9090
+      SCALE_CHECK_INTERVAL: 60
+      MIN_REPLICAS: 2
+      MAX_REPLICAS: 10
+      CPU_THRESHOLD: 70
+      MEMORY_THRESHOLD: 80
+      SCALE_UP_COOLDOWN: 300
+      SCALE_DOWN_COOLDOWN: 600
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - testbro-network
+      - monitoring
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+        max_attempts: 5
+
+  # Log Aggregation
+  fluentd:
+    image: fluent/fluentd:v1.16-1
+    volumes:
+      - ./logging/fluentd.conf:/fluentd/etc/fluent.conf:ro
+      - app_logs:/app/logs:ro
+      - nginx_logs:/nginx/logs:ro
+    networks:
+      - testbro-network
+      - monitoring
+    deploy:
+      mode: global  # Run on every node
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+
+  # Health Check Service
+  healthcheck:
+    image: ${DOCKER_REGISTRY:-ghcr.io/testbro-ai}/testbro-healthcheck:${IMAGE_TAG:-latest}
+    environment:
+      SERVICES_TO_CHECK: "testbro-backend,nginx,postgres,redis"
+      CHECK_INTERVAL: 30
+      ALERT_WEBHOOK: ${SLACK_WEBHOOK_URL}
+    networks:
+      - testbro-network
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+      restart_policy:
+        condition: on-failure
+        delay: 60s
+        max_attempts: 3
+
+networks:
+  testbro-network:
+    driver: overlay
+    attachable: true
+    driver_opts:
+      encrypted: "true"
+  monitoring:
+    driver: overlay
+    attachable: true
+  traefik-public:
+    external: true
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/testbro/data/postgres
+  postgres_backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/testbro/backups/postgres
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  nginx_cache:
+    driver: local
+  nginx_logs:
+    driver: local
+  app_logs:
+    driver: local
+
+configs:
+  nginx_config:
+    file: ./nginx/production/nginx.conf
+  prometheus_config:
+    file: ./monitoring/prometheus-swarm.yml
+
+secrets:
+  postgres_password:
+    external: true
+  jwt_secret:
+    external: true
+  grafana_admin_password:
+    external: true

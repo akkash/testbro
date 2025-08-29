@@ -1,0 +1,38 @@
+# TestBro Frontend Development Dockerfile
+# Optimized for development with Vite hot reloading
+
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy configuration files
+COPY vite.config.ts ./
+COPY tsconfig.json ./
+COPY tsconfig.app.json ./
+COPY tsconfig.node.json ./
+COPY tailwind.config.js ./
+COPY postcss.config.js ./
+COPY eslint.config.js ./
+COPY components.json ./
+COPY index.html ./
+
+# Copy source code (will be mounted as volume in dev)
+COPY src/ ./src/
+COPY public/ ./public/
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:5173/ || exit 1
+
+# Start Vite development server with hot reloading
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]

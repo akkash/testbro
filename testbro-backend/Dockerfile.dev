@@ -1,0 +1,40 @@
+# TestBro Backend Development Dockerfile
+# Optimized for development with hot reloading
+
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install global dependencies for development
+RUN npm install -g tsx nodemon
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Install all dependencies (including dev dependencies)
+RUN npm install
+
+# Create logs directory
+RUN mkdir -p logs logs/audit logs/performance logs/security
+
+# Copy source code (will be mounted as volume in dev)
+COPY src/ ./src/
+
+# Expose port and debugger port
+EXPOSE 3001 9229
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "const http = require('http'); \
+    const options = { hostname: 'localhost', port: 3001, path: '/health', timeout: 5000 }; \
+    const req = http.request(options, (res) => { \
+        if (res.statusCode === 200) process.exit(0); \
+        else process.exit(1); \
+    }); \
+    req.on('error', () => process.exit(1)); \
+    req.end();"
+
+# Start development server with hot reloading and debugging
+CMD ["tsx", "watch", "--inspect=0.0.0.0:9229", "src/server.ts"]

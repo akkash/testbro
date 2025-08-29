@@ -1,0 +1,124 @@
+version: '3.8'
+
+# TestBro.ai Development Stack
+# This compose file is optimized for development with hot reloading
+services:
+  # PostgreSQL Database (same as production)
+  postgres:
+    image: postgres:15-alpine
+    container_name: testbro-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: testbro_dev
+      POSTGRES_USER: testbro
+      POSTGRES_PASSWORD: testbro_dev_password
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - testbro-dev-network
+
+  # Redis Cache (same as production)
+  redis:
+    image: redis:7-alpine
+    container_name: testbro-redis-dev
+    restart: unless-stopped
+    command: redis-server --requirepass testbro_redis_dev --appendonly yes
+    volumes:
+      - redis_dev_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - testbro-dev-network
+
+  # TestBro Backend (Development mode with hot reloading)
+  testbro-backend-dev:
+    build:
+      context: ./testbro-backend
+      dockerfile: Dockerfile.dev
+      args:
+        NODE_ENV: development
+    container_name: testbro-backend-dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      
+      # Database Configuration
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: testbro_redis_dev
+      
+      # JWT Configuration
+      JWT_SECRET: dev_jwt_secret_not_for_production
+      JWT_REFRESH_SECRET: dev_refresh_secret_not_for_production
+      
+      # OpenRouter AI Configuration
+      OPENROUTER_KEY: ${OPENROUTER_KEY}
+      
+      # Frontend URL for CORS
+      FRONTEND_URL: http://localhost:5173
+      
+      # Development settings
+      LOG_LEVEL: debug
+      DEV_ENABLE_CORS: true
+      DEV_ENABLE_LOGGING: true
+      
+    volumes:
+      - ./testbro-backend/src:/app/src:ro
+      - ./testbro-backend/package.json:/app/package.json:ro
+      - ./testbro-backend/tsconfig.json:/app/tsconfig.json:ro
+      - backend_dev_logs:/app/logs
+    ports:
+      - "3001:3001"
+      - "9229:9229"  # Node.js debugger
+    networks:
+      - testbro-dev-network
+    depends_on:
+      - redis
+      - postgres
+
+  # TestBro Frontend (Development mode with Vite)
+  testbro-frontend-dev:
+    build:
+      context: ./testbro-frontend
+      dockerfile: Dockerfile.dev
+      args:
+        VITE_API_URL: http://localhost:3001
+    container_name: testbro-frontend-dev
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:3001
+      NODE_ENV: development
+    volumes:
+      - ./testbro-frontend/src:/app/src:ro
+      - ./testbro-frontend/public:/app/public:ro
+      - ./testbro-frontend/package.json:/app/package.json:ro
+      - ./testbro-frontend/vite.config.ts:/app/vite.config.ts:ro
+      - ./testbro-frontend/tsconfig.json:/app/tsconfig.json:ro
+      - ./testbro-frontend/tailwind.config.js:/app/tailwind.config.js:ro
+    ports:
+      - "5173:5173"
+    networks:
+      - testbro-dev-network
+    depends_on:
+      - testbro-backend-dev
+
+# Development volumes
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  backend_dev_logs:
+    driver: local
+
+# Development network
+networks:
+  testbro-dev-network:
+    driver: bridge

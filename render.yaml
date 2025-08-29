@@ -1,0 +1,64 @@
+# Render.com deployment configuration for TestBro Backend
+# This file should be placed in the root of your repository
+
+services:
+  - type: web
+    name: testbro-backend
+    runtime: node
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: 3001
+      - key: CORS_ORIGIN
+        value: https://testbro.vercel.app
+      - key: SUPABASE_URL
+        fromGroup: production-secrets
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromGroup: production-secrets
+      - key: JWT_SECRET
+        fromGroup: production-secrets
+      - key: REDIS_URL
+        fromDatabase:
+          name: testbro-redis
+          property: connectionString
+    healthCheckPath: /health
+    disk:
+      name: testbro-backend-disk
+      mountPath: /app/logs
+      sizeGB: 1
+    scaling:
+      minInstances: 1
+      maxInstances: 10
+      targetMemoryPercent: 70
+      targetCPUPercent: 70
+
+  - type: redis
+    name: testbro-redis
+    ipAllowList: []
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+
+databases:
+  - name: testbro-postgres
+    databaseName: testbro_production
+    user: testbro
+    plan: starter
+    region: oregon
+    version: "15"
+
+envVarGroups:
+  - name: production-secrets
+    envVars:
+      - key: SUPABASE_URL
+        value: # Set in Render dashboard
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: # Set in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true

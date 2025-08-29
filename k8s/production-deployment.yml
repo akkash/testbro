@@ -1,0 +1,624 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: testbro-production
+  labels:
+    name: testbro-production
+    environment: production
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: testbro-config
+  namespace: testbro-production
+data:
+  NODE_ENV: "production"
+  LOG_LEVEL: "warn"
+  REDIS_URL: "redis://redis-service:6379"
+  DATABASE_URL: "postgresql://testbro:$(POSTGRES_PASSWORD)@postgres-service:5432/testbro_production"
+
+---
+# Secret for sensitive configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: testbro-secrets
+  namespace: testbro-production
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual encoded secrets
+  postgres-password: dGVzdGJyb19wcm9kX3Bhc3M=  # testbro_prod_pass
+  jwt-secret: c3VwZXJfc2VjcmV0X2p3dF9rZXk=  # super_secret_jwt_key
+  supabase-url: aHR0cHM6Ly95b3VyLXN1cGFiYXNlLXVybA==  # https://your-supabase-url
+  supabase-key: eW91ci1zdXBhYmFzZS1zZXJ2aWNlLWtleQ==  # your-supabase-service-key
+
+---
+# Backend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: testbro-backend
+  namespace: testbro-production
+  labels:
+    app: testbro-backend
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: testbro-backend
+  template:
+    metadata:
+      labels:
+        app: testbro-backend
+        version: v1
+    spec:
+      containers:
+      - name: testbro-backend
+        image: ghcr.io/testbro-ai/testbro-backend:latest
+        ports:
+        - containerPort: 3001
+          name: http
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: testbro-config
+              key: NODE_ENV
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: testbro-config
+              key: LOG_LEVEL
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: testbro-config
+              key: REDIS_URL
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: testbro-secrets
+              key: postgres-password
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: testbro-secrets
+              key: jwt-secret
+        - name: SUPABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: testbro-secrets
+              key: supabase-url
+        - name: SUPABASE_SERVICE_ROLE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: testbro-secrets
+              key: supabase-key
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: logs-volume
+          mountPath: /app/logs
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      - name: logs-volume
+        emptyDir: {}
+      imagePullSecrets:
+      - name: ghcr-secret
+
+---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: testbro-backend-service
+  namespace: testbro-production
+  labels:
+    app: testbro-backend
+spec:
+  selector:
+    app: testbro-backend
+  ports:
+  - port: 3001
+    targetPort: 3001
+    name: http
+  type: ClusterIP
+
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: testbro-frontend
+  namespace: testbro-production
+  labels:
+    app: testbro-frontend
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: testbro-frontend
+  template:
+    metadata:
+      labels:
+        app: testbro-frontend
+        version: v1
+    spec:
+      containers:
+      - name: testbro-frontend
+        image: ghcr.io/testbro-ai/testbro-frontend:latest
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 101
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-tmp
+          mountPath: /var/tmp
+      volumes:
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-tmp
+        emptyDir: {}
+      imagePullSecrets:
+      - name: ghcr-secret
+
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: testbro-frontend-service
+  namespace: testbro-production
+  labels:
+    app: testbro-frontend
+spec:
+  selector:
+    app: testbro-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+  type: ClusterIP
+
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: testbro-production
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_DB
+          value: testbro_production
+        - name: POSTGRES_USER
+          value: testbro
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: testbro-secrets
+              key: postgres-password
+        - name: POSTGRES_SHARED_PRELOAD_LIBRARIES
+          value: pg_stat_statements
+        ports:
+        - containerPort: 5432
+          name: postgres
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - testbro
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - testbro
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 100Gi
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: testbro-production
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+    name: postgres
+  type: ClusterIP
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: testbro-production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "1gb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-pvc
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: testbro-production
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  type: ClusterIP
+
+---
+# Redis PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: testbro-production
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: fast-ssd
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# Horizontal Pod Autoscaler for Backend
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: testbro-backend-hpa
+  namespace: testbro-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: testbro-backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+
+---
+# Horizontal Pod Autoscaler for Frontend
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: testbro-frontend-hpa
+  namespace: testbro-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: testbro-frontend
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+
+---
+# Network Policy for Security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: testbro-network-policy
+  namespace: testbro-production
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3001
+    - protocol: TCP
+      port: 80
+  - from:
+    - podSelector:
+        matchLabels:
+          app: testbro-backend
+    - podSelector:
+        matchLabels:
+          app: testbro-frontend
+    ports:
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+  egress:
+  - {}
+
+---
+# Pod Disruption Budget for Backend
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: testbro-backend-pdb
+  namespace: testbro-production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: testbro-backend
+
+---
+# Pod Disruption Budget for Frontend
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: testbro-frontend-pdb
+  namespace: testbro-production
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: testbro-frontend
+
+---
+# Ingress for External Access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: testbro-ingress
+  namespace: testbro-production
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  tls:
+  - hosts:
+    - testbro.ai
+    - api.testbro.ai
+    secretName: testbro-tls
+  rules:
+  - host: testbro.ai
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: testbro-backend-service
+            port:
+              number: 3001
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: testbro-frontend-service
+            port:
+              number: 80
+  - host: api.testbro.ai
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: testbro-backend-service
+            port:
+              number: 3001

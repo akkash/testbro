@@ -1,0 +1,62 @@
+[Unit]
+Description=TestBro Auto-scaler Service
+Documentation=https://github.com/testbro-ai/testbro
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=forking
+User=testbro
+Group=docker
+WorkingDirectory=/opt/testbro-production
+
+# Environment variables
+Environment="COMPOSE_FILE=docker-compose.yml"
+Environment="COMPOSE_PROJECT=testbro"
+Environment="CHECK_INTERVAL=60"
+Environment="MIN_REPLICAS=2"
+Environment="MAX_REPLICAS=10"
+Environment="CPU_THRESHOLD=70"
+Environment="MEMORY_THRESHOLD=80"
+Environment="SCALE_UP_COOLDOWN=300"
+Environment="SCALE_DOWN_COOLDOWN=600"
+
+# Load additional environment from file
+EnvironmentFile=-/opt/testbro-production/.env
+EnvironmentFile=-/opt/testbro-production/.env.autoscaler
+
+# Service execution
+ExecStart=/opt/testbro-production/scripts/autoscaler.sh start
+ExecStop=/opt/testbro-production/scripts/autoscaler.sh stop
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Process management
+PIDFile=/var/run/testbro-autoscaler.pid
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/testbro-production /var/log /var/run /tmp
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=testbro-autoscaler
+
+[Install]
+WantedBy=multi-user.target
