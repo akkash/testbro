@@ -232,7 +232,7 @@ const CriticalIssuesFeed = ({ issues }: { issues: any[] }) => {
 };
 
 export default function DashboardOverview() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading: authLoading, user } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [recentActivity, setRecentActivity] = useState<DashboardActivity[]>([]);
   const [recentExecutions, setRecentExecutions] = useState<any[]>([]);
@@ -247,7 +247,8 @@ export default function DashboardOverview() {
   const { connectionState, addEventListener, removeEventListener } = useWebSocket();
 
   const loadDashboardData = async () => {
-    if (!isAuthenticated) {
+    // Wait for auth to be ready and user to be available
+    if (authLoading || !user) {
       setLoading(false);
       return;
     }
@@ -337,8 +338,15 @@ export default function DashboardOverview() {
   };
 
   useEffect(() => {
-    loadDashboardData();
-  }, [isAuthenticated]);
+    // Only load data when auth is ready and user is available
+    if (!authLoading && user) {
+      loadDashboardData();
+    } else if (!authLoading && !user) {
+      // Auth is ready but no user - this shouldn't happen in protected routes
+      // but handle it gracefully
+      setLoading(false);
+    }
+  }, [authLoading, user]);
 
   // Real-time updates via WebSocket
   useEffect(() => {
@@ -380,7 +388,20 @@ export default function DashboardOverview() {
     setRefreshing(true);
     await loadDashboardData();
   };
-  // Loading state
+
+  // Show loading state while authentication is being checked
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center space-x-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span className="text-gray-600">Initializing dashboard...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state for dashboard data
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">

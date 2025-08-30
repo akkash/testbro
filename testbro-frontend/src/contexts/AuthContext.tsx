@@ -76,10 +76,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (error) {
           console.error('Error getting session:', error)
           setLastError(error.message)
+          setLoading(false)
           return
         }
         
         if (session) {
+          console.log('Session found on initialization:', session.user?.id)
           setSession(session)
           setUser(session.user as User)
           setToken(session.access_token)
@@ -88,30 +90,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Store token for API calls
           localStorage.setItem('sb-token', session.access_token)
           
-          // Verify token with backend and get user profile
-          try {
-            const userProfile = await apiClient.get('/api/auth/me')
-            console.log('User profile loaded:', userProfile)
-            clearError() // Clear any previous errors
-          } catch (error) {
-            console.error('Failed to load user profile:', error)
-            const errorMsg = error instanceof Error ? error.message : 'Failed to verify with backend'
-            setLastError(errorMsg)
-            
-            // If backend verification fails, we might want to sign out
-            if ((error as any)?.status === 401) {
-              console.warn('Backend authentication failed, signing out...')
-              await supabase.auth.signOut()
-            }
-          }
+          // Set loading to false immediately after setting session
+          // Backend verification can happen in background
+          setLoading(false)
+          
+          // Verify token with backend and get user profile (non-blocking)
+          apiClient.get('/api/auth/me')
+            .then((userProfile) => {
+              console.log('User profile loaded:', userProfile)
+              clearError() // Clear any previous errors
+            })
+            .catch((error) => {
+              console.error('Failed to load user profile:', error)
+              const errorMsg = error instanceof Error ? error.message : 'Failed to verify with backend'
+              setLastError(errorMsg)
+              
+              // If backend verification fails, we might want to sign out
+              if ((error as any)?.status === 401) {
+                console.warn('Backend authentication failed, signing out...')
+                supabase.auth.signOut()
+              }
+            })
         } else {
+          console.log('No session found on initialization')
           // No session, clear any stored tokens
           localStorage.removeItem('sb-token')
+          setLoading(false)
         }
       } catch (error) {
         console.error('Error getting initial session:', error)
         setLastError(error instanceof Error ? error.message : 'Session initialization failed')
-      } finally {
         setLoading(false)
       }
     }
@@ -124,6 +132,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('Auth state changed:', event, session?.user?.id)
         
         try {
+          // Don't set loading true for auth state changes to avoid flicker
+          if (event === 'INITIAL_SESSION') {
+            // Skip initial session as it's already handled above
+            return
+          }
+          
           setSession(session)
           setUser(session?.user as User || null)
           setToken(session?.access_token || null)
@@ -134,16 +148,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             // Store token for API calls
             localStorage.setItem('sb-token', session.access_token)
             
-            // Verify with backend
-            try {
-              const userProfile = await apiClient.get('/api/auth/me')
-              console.log('User profile verified:', userProfile)
-              clearError() // Clear any previous errors
-            } catch (error) {
-              console.error('Backend verification failed:', error)
-              const errorMsg = error instanceof Error ? error.message : 'Backend verification failed'
-              setLastError(errorMsg)
-            }
+            // Verify with backend (non-blocking)
+            apiClient.get('/api/auth/me')
+              .then((userProfile) => {
+                console.log('User profile verified:', userProfile)
+                clearError() // Clear any previous errors
+              })
+              .catch((error) => {
+                console.error('Backend verification failed:', error)
+                const errorMsg = error instanceof Error ? error.message : 'Backend verification failed'
+                setLastError(errorMsg)
+              })
           } else {
             // Clear stored token and state
             localStorage.removeItem('sb-token')
@@ -153,8 +168,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } catch (error) {
           console.error('Auth state change error:', error)
           setLastError(error instanceof Error ? error.message : 'Authentication state error')
-        } finally {
-          setLoading(false)
         }
       }
     )

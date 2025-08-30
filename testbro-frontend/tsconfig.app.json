@@ -11,6 +11,10 @@
     ],
     "module": "ESNext",
     "skipLibCheck": true,
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ],
     "baseUrl": ".",
     "paths": {
       "@/*": [
@@ -44,6 +48,7 @@
     "noUncheckedSideEffectImports": true
   },
   "include": [
-    "src"
+    "src",
+    "src/types/**/*"
   ]
 }

@@ -29,11 +29,13 @@ import Pricing from "@/polymet/pages/pricing";
 import Login from "@/polymet/pages/login";
 import Signup from "@/polymet/pages/signup";
 import BrowserAutomationDashboard from "@/polymet/pages/browser-automation-dashboard";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 export default function TestBroApp() {
   return (
-    <AuthProvider>
-      <Router>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Router>
         <Routes>
           {/* Authentication routes - Public */}
           <Route path="/login" element={<Login />} />
@@ -255,5 +257,6 @@ export default function TestBroApp() {
         </Routes>
       </Router>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
