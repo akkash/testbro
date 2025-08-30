@@ -30,6 +30,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   PlayIcon,
   PlusIcon,
   SearchIcon,
@@ -49,6 +55,12 @@ import {
   ClockIcon as ScheduleIcon,
   RefreshCw,
   AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Zap,
+  ChevronDown,
+  BarChart3,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { TestSuiteService } from "@/lib/services/testSuiteService";
@@ -156,6 +168,33 @@ export default function TestSuiteManager() {
     });
   };
 
+  // Generate mock failure summary for test suites
+  const getSuiteFailureSummary = (suite: any) => {
+    const totalTests = suite.test_case_ids?.length || 0;
+    if (totalTests === 0) return { passed: 0, failed: 0 };
+
+    // Mock data - in real app this would come from execution results
+    const failed = Math.floor(Math.random() * Math.min(totalTests, 5)); // 0-4 failures
+    const passed = totalTests - failed;
+
+    return { passed, failed };
+  };
+
+  // Get last execution status for a suite
+  const getSuiteLastExecution = (suite: any) => {
+    const statuses = ["passed", "failed", "running", "pending"];
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    const date = new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000);
+
+    return { status, date };
+  };
+
+  // Handle running suite on specific environment
+  const handleRunSuiteOnEnvironment = (suiteId: string, environment: string) => {
+    console.log(`Running suite ${suiteId} on ${environment} environment`);
+    // TODO: Implement environment-specific execution
+  };
+
   const handleRunSuite = async (suiteId: string) => {
     try {
       const { error } = await TestSuiteService.executeTestSuite(suiteId);
@@ -245,7 +284,8 @@ export default function TestSuiteManager() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -492,159 +532,293 @@ export default function TestSuiteManager() {
 
       {/* Test Suites Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredSuites.map((suite) => (
-          <Card key={suite.id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <CardTitle className="text-lg font-semibold text-gray-900 mb-1">
-                    {suite.name}
-                  </CardTitle>
-                  <p className="text-sm text-gray-600 line-clamp-2">
-                    {suite.description}
-                  </p>
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
-                      <MoreHorizontalIcon className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleRunSuite(suite.id)}>
-                      <PlayIcon className="w-4 h-4 mr-2" />
-                      Run Suite
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleEditSuite(suite.id)}>
-                      <EditIcon className="w-4 h-4 mr-2" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => handleDuplicateSuite(suite.id)}
-                    >
-                      <CopyIcon className="w-4 h-4 mr-2" />
-                      Duplicate
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
+        {filteredSuites.map((suite) => {
+          const failureSummary = getSuiteFailureSummary(suite);
+          const lastExecution = getSuiteLastExecution(suite);
 
-                    <DropdownMenuItem
-                      onClick={() => handleToggleSchedule(suite.id)}
-                    >
-                      {suite.schedule?.enabled ? (
-                        <>
-                          <PauseIcon className="w-4 h-4 mr-2" />
-                          Disable Schedule
-                        </>
-                      ) : (
-                        <>
-                          <CalendarIcon className="w-4 h-4 mr-2" />
-                          Enable Schedule
-                        </>
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-
-                    <DropdownMenuItem
-                      onClick={() => handleDeleteSuite(suite.id)}
-                      className="text-red-600"
-                    >
-                      <TrashIcon className="w-4 h-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardHeader>
-
-            <CardContent className="space-y-4">
-              {/* Status and Environment */}
-              <div className="flex items-center gap-2">
-                <Badge variant={suite.isActive ? "default" : "secondary"}>
-                  {suite.isActive ? "Active" : "Inactive"}
-                </Badge>
-                <Badge variant="outline">{suite.environment}</Badge>
-                {suite.schedule?.enabled && (
-                  <Badge
-                    variant="outline"
-                    className="text-purple-600 border-purple-200"
-                  >
-                    <CalendarIcon className="w-3 h-3 mr-1" />
-                    Scheduled
-                  </Badge>
-                )}
-              </div>
-
-              {/* Project and Targets */}
-              <div className="space-y-2">
-                <div className="flex items-center text-sm text-gray-600">
-                  <FolderIcon className="w-4 h-4 mr-2" />
-
-                  {getProjectName(suite.projectId)}
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <TargetIcon className="w-4 h-4 mr-2" />
-
-                  {getTargetNames(suite.targetIds).join(", ")}
+          return (
+            <Card key={suite.id} className="hover:shadow-lg transition-all duration-200 border-l-4 border-l-indigo-500 bg-gradient-to-br from-indigo-50/30 to-white relative overflow-hidden">
+              {/* Suite Type Indicator */}
+              <div className="absolute top-0 right-0 bg-indigo-600 text-white px-2 py-1 rounded-bl-lg">
+                <div className="flex items-center text-xs font-medium">
+                  <TestTubeIcon className="w-3 h-3 mr-1" />
+                  SUITE
                 </div>
               </div>
-
-              {/* Test Cases Count */}
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center text-gray-600">
-                  <TestTubeIcon className="w-4 h-4 mr-2" />
-                  {getTestCaseCount(suite.testCases)} test cases
-                </div>
-                {suite.schedule?.enabled && (
-                  <div className="flex items-center text-gray-500">
-                    <ClockIcon className="w-4 h-4 mr-1" />
-
-                    {suite.schedule.cron}
+              <CardHeader className="pb-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-1">
+                      <div className="p-2 bg-indigo-100 rounded-lg">
+                        <FolderIcon className="w-5 h-5 text-indigo-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg font-semibold text-gray-900">
+                          {suite.name}
+                        </CardTitle>
+                        <p className="text-xs text-indigo-600 font-medium">TEST SUITE</p>
+                      </div>
+                      {/* Last Execution Status Indicator */}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className={`w-4 h-4 rounded-full border-2 border-white shadow-sm ${
+                              lastExecution.status === 'passed' ? 'bg-green-500' :
+                              lastExecution.status === 'failed' ? 'bg-red-500' :
+                              lastExecution.status === 'running' ? 'bg-blue-500 animate-pulse' :
+                              'bg-gray-400'
+                            }`} />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-medium">Last run: {lastExecution.status}</p>
+                            <p className="text-xs text-gray-500">{lastExecution.date.toLocaleDateString()}</p>
+                            {lastExecution.status === 'failed' && (
+                              <p className="text-xs text-red-600 mt-1">⚠️ Check failure details</p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <p className="text-sm text-gray-600 line-clamp-2 ml-11">
+                      {suite.description}
+                    </p>
                   </div>
-                )}
-              </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        <MoreHorizontalIcon className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleRunSuite(suite.id)}>
+                        <PlayIcon className="w-4 h-4 mr-2" />
+                        Run Suite
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEditSuite(suite.id)}>
+                        <EditIcon className="w-4 h-4 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleDuplicateSuite(suite.id)}
+                      >
+                        <CopyIcon className="w-4 h-4 mr-2" />
+                        Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
 
-              {/* Tags */}
-              {suite.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {suite.tags?.slice(0, 3)?.map((tag: string) => (
-                    <Badge key={tag} variant="outline" className="text-xs">
-                      {tag}
+                      <DropdownMenuItem
+                        onClick={() => handleToggleSchedule(suite.id)}
+                      >
+                        {suite.schedule?.enabled ? (
+                          <>
+                            <PauseIcon className="w-4 h-4 mr-2" />
+                            Disable Schedule
+                          </>
+                        ) : (
+                          <>
+                            <CalendarIcon className="w-4 h-4 mr-2" />
+                            Enable Schedule
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+
+                      <DropdownMenuItem
+                        onClick={() => handleDeleteSuite(suite.id)}
+                        className="text-red-600"
+                      >
+                        <TrashIcon className="w-4 h-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </CardHeader>
+
+              <CardContent className="space-y-4">
+                {/* Status and Environment */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={suite.is_active ? "default" : "secondary"}>
+                      {suite.is_active ? "Active" : "Inactive"}
                     </Badge>
-                  ))}
-                  {suite.tags.length > 3 && (
-                    <Badge variant="outline" className="text-xs">
-                      +{suite.tags.length - 3}
-                    </Badge>
+                    <Badge variant="outline">{suite.environment}</Badge>
+                    {suite.schedule?.enabled && (
+                      <Badge
+                        variant="outline"
+                        className="text-purple-600 border-purple-200"
+                      >
+                        <CalendarIcon className="w-3 h-3 mr-1" />
+                        Scheduled
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-1 text-xs text-gray-500">
+                    <Users className="w-3 h-3" />
+                    <span>Team</span>
+                  </div>
+                </div>
+
+                {/* Enhanced Failure Summary */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-gray-900 flex items-center">
+                      <BarChart3 className="w-4 h-4 mr-2 text-indigo-600" />
+                      Recent Results
+                    </h4>
+                    {failureSummary.failed > 0 && (
+                      <Badge variant="destructive" className="text-xs">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        {failureSummary.failed} Failed
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center p-3 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200">
+                      <div className="text-xl font-bold text-green-700">{failureSummary.passed}</div>
+                      <div className="text-xs text-green-600 font-medium">Passed</div>
+                      <div className="text-xs text-green-500 mt-1">
+                        <TrendingUp className="w-3 h-3 inline mr-1" />
+                        +5%
+                      </div>
+                    </div>
+                    <div className="text-center p-3 bg-gradient-to-br from-red-50 to-red-100 rounded-lg border border-red-200">
+                      <div className="text-xl font-bold text-red-700">{failureSummary.failed}</div>
+                      <div className="text-xs text-red-600 font-medium">Failed</div>
+                      <div className="text-xs text-red-500 mt-1">
+                        <TrendingDown className="w-3 h-3 inline mr-1" />
+                        -2%
+                      </div>
+                    </div>
+                    <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                      <div className="text-xl font-bold text-blue-700">{getTestCaseCount(suite.test_case_ids)}</div>
+                      <div className="text-xs text-blue-600 font-medium">Total</div>
+                      <div className="text-xs text-blue-500 mt-1">
+                        <TargetIcon className="w-3 h-3 inline mr-1" />
+                        Tests
+                      </div>
+                    </div>
+                  </div>
+                  {lastExecution.status === 'failed' && (
+                    <div className="p-2 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-center text-xs text-red-700">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        <span className="font-medium">Last run failed:</span>
+                        <span className="ml-1">{lastExecution.date.toLocaleDateString()}</span>
+                      </div>
+                    </div>
                   )}
                 </div>
-              )}
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 pt-2">
-                <Button
-                  size="sm"
-                  onClick={() => handleRunSuite(suite.id)}
-                  className="flex-1"
-                >
-                  <PlayIcon className="w-4 h-4 mr-2" />
-                  Run Suite
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleEditSuite(suite.id)}
-                >
-                  <EditIcon className="w-4 h-4" />
-                </Button>
-              </div>
+                {/* Project and Targets */}
+                <div className="space-y-2">
+                  <div className="flex items-center text-sm text-gray-600">
+                    <FolderIcon className="w-4 h-4 mr-2 text-blue-500" />
+                    <span className="font-medium">{getProjectName(suite.project_id)}</span>
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600">
+                    <TargetIcon className="w-4 h-4 mr-2 text-purple-500" />
+                    <span>{getTargetNames(suite.target_ids || []).join(", ")}</span>
+                  </div>
+                </div>
 
-              {/* Last Updated */}
-              <div className="text-xs text-gray-500 pt-2 border-t">
-                Updated {new Date(suite.updatedAt).toLocaleDateString()}
-              </div>
-            </CardContent>
+                {/* Tags */}
+                {suite.tags && suite.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {suite.tags.slice(0, 3).map((tag: string) => (
+                      <Badge key={tag} variant="outline" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                    {suite.tags.length > 3 && (
+                      <Badge variant="outline" className="text-xs">
+                        +{suite.tags.length - 3}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+
+                {/* Enhanced Actions */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleRunSuite(suite.id)}
+                      className="bg-blue-600 hover:bg-blue-700 flex-1"
+                    >
+                      <Zap className="w-4 h-4 mr-2" />
+                      Run Suite
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditSuite(suite.id)}
+                      className="px-3"
+                    >
+                      <EditIcon className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {/* Environment Run Dropdown - More Prominent */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 font-medium">Run on:</span>
+                    <div className="flex gap-1 flex-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRunSuiteOnEnvironment(suite.id, 'development')}
+                        className="flex-1 text-xs border-blue-200 hover:bg-blue-50"
+                      >
+                        <TargetIcon className="w-3 h-3 mr-1 text-blue-500" />
+                        Dev
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRunSuiteOnEnvironment(suite.id, 'staging')}
+                        className="flex-1 text-xs border-yellow-200 hover:bg-yellow-50"
+                      >
+                        <TargetIcon className="w-3 h-3 mr-1 text-yellow-500" />
+                        Staging
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRunSuiteOnEnvironment(suite.id, 'production')}
+                        className="flex-1 text-xs border-red-200 hover:bg-red-50"
+                      >
+                        <TargetIcon className="w-3 h-3 mr-1 text-red-500" />
+                        Prod
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Drag and Drop Hint */}
+                  <div className="flex items-center justify-center p-2 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 hover:border-indigo-300 transition-colors">
+                    <div className="text-center">
+                      <TargetIcon className="w-4 h-4 text-gray-400 mx-auto mb-1" />
+                      <p className="text-xs text-gray-500">
+                        Drag test cases here to add to suite
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Last Updated */}
+                <div className="text-xs text-gray-500 pt-2 border-t flex items-center justify-between">
+                  <span>Updated {new Date(suite.updated_at).toLocaleDateString()}</span>
+                  {suite.schedule?.enabled && (
+                    <div className="flex items-center text-xs text-purple-600">
+                      <ClockIcon className="w-3 h-3 mr-1" />
+                      <span>{suite.schedule.cron}</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       {/* Empty State */}
@@ -670,6 +844,7 @@ export default function TestSuiteManager() {
             )}
         </div>
       )}
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

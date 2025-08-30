@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Play,
   Upload,
@@ -17,6 +17,12 @@ import {
   Video,
   Monitor,
   PlayCircle,
+  Sparkles,
+  Lightbulb,
+  MessageSquare,
+  Wand2,
+  ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import BrowserAutomationPlayer from "@/polymet/components/browser-automation-player";
 import { Button } from "@/components/ui/button";
@@ -62,6 +68,7 @@ interface BrowserAutomationData {
 }
 
 export default function AISimulationRunner() {
+  const [naturalLanguageInput, setNaturalLanguageInput] = useState("");
   const [testCaseInput, setTestCaseInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [simulationProgress, setSimulationProgress] = useState(0);
@@ -72,6 +79,9 @@ export default function AISimulationRunner() {
   const [browserAutomation, setBrowserAutomation] =
     useState<BrowserAutomationData | null>(null);
   const [showBrowserView, setShowBrowserView] = useState(false);
+  const [aiPreviewSteps, setAiPreviewSteps] = useState<any[]>([]);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [inputMode, setInputMode] = useState<"natural" | "technical">("natural");
 
   const mockSimulationSteps: SimulationStep[] = [
     {
@@ -216,6 +226,112 @@ export default function AISimulationRunner() {
     }
   };
 
+  // Generate AI preview from natural language input
+  const generateAIPreview = async () => {
+    if (!naturalLanguageInput.trim()) return;
+
+    setIsGeneratingPreview(true);
+
+    // Simulate AI processing time
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // Mock AI-generated steps based on input
+    const mockPreviewSteps = [
+      {
+        id: "preview-1",
+        step: 1,
+        action: "Navigate to login page",
+        description: "Open the main login page URL",
+        confidence: 95,
+        reasoning: "User mentioned 'login' so we need to start at login page"
+      },
+      {
+        id: "preview-2",
+        step: 2,
+        action: "Fill email field",
+        description: "Enter user email address",
+        confidence: 90,
+        reasoning: "Login flows typically require email input"
+      },
+      {
+        id: "preview-3",
+        step: 3,
+        action: "Fill password field",
+        description: "Enter user password",
+        confidence: 88,
+        reasoning: "Password is required for authentication"
+      },
+      {
+        id: "preview-4",
+        step: 4,
+        action: "Click login button",
+        description: "Submit login credentials",
+        confidence: 92,
+        reasoning: "Submit button completes the login process"
+      },
+      {
+        id: "preview-5",
+        step: 5,
+        action: "Wait for dashboard",
+        description: "Verify successful login",
+        confidence: 85,
+        reasoning: "Confirm user reached intended destination"
+      }
+    ];
+
+    setAiPreviewSteps(mockPreviewSteps);
+    setIsGeneratingPreview(false);
+  };
+
+  // Load sample templates
+  const loadSampleTemplate = (template: string) => {
+    const templates = {
+      "login": "User logs into the application: 1) Navigate to login page, 2) Enter valid email and password, 3) Click login button, 4) Verify dashboard loads",
+      "checkout": "User completes purchase: 1) Add items to cart, 2) Proceed to checkout, 3) Fill shipping information, 4) Enter payment details, 5) Complete purchase",
+      "registration": "User creates new account: 1) Navigate to signup page, 2) Fill registration form, 3) Verify email address, 4) Complete profile setup",
+      "search": "User searches for products: 1) Navigate to homepage, 2) Use search bar to find items, 3) Apply filters, 4) View search results, 5) Select product"
+    };
+
+    setNaturalLanguageInput(templates[template as keyof typeof templates] || "");
+    setInputMode("natural");
+  };
+
+  // Convert natural language to technical format
+  const convertToTechnicalFormat = () => {
+    if (!naturalLanguageInput.trim()) return;
+
+    // Mock conversion - in real app this would call AI service
+    const technicalFormat = `
+{
+  "testCase": {
+    "name": "AI Generated Test Case",
+    "description": "${naturalLanguageInput}",
+    "steps": ${JSON.stringify(aiPreviewSteps.map(step => ({
+      action: step.action,
+      selector: ".auto-generated",
+      value: "",
+      wait: 1000
+    })), null, 2)}
+  }
+}`;
+
+    setTestCaseInput(technicalFormat);
+    setInputMode("technical");
+  };
+
+  // Effect to generate preview when natural language input changes
+  useEffect(() => {
+    if (naturalLanguageInput.trim()) {
+      const timeoutId = setTimeout(() => {
+        generateAIPreview();
+      }, 1000); // Debounce for 1 second
+
+      return () => clearTimeout(timeoutId);
+    } else {
+      setAiPreviewSteps([]);
+    }
+  }, [naturalLanguageInput]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -244,15 +360,201 @@ export default function AISimulationRunner() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Test Case Input */}
-        <Card>
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        {/* Natural Language Input */}
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <MessageSquare className="w-5 h-5 text-blue-600" />
+              <span>Describe Your Flow</span>
+              <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                <Brain className="w-3 h-3 mr-1" />
+                AI Powered
+              </Badge>
+            </CardTitle>
+            <p className="text-sm text-gray-600">
+              Tell us in plain English what you want to test, and our AI will generate the perfect simulation
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Sample Templates */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-gray-900 flex items-center">
+                <Lightbulb className="w-4 h-4 mr-2 text-yellow-500" />
+                Quick Start Templates
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadSampleTemplate("login")}
+                  className="text-left justify-start h-auto p-3"
+                >
+                  <div>
+                    <div className="font-medium text-sm">🔐 Login Flow</div>
+                    <div className="text-xs text-gray-500">User authentication</div>
+                  </div>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadSampleTemplate("checkout")}
+                  className="text-left justify-start h-auto p-3"
+                >
+                  <div>
+                    <div className="font-medium text-sm">🛒 Checkout Flow</div>
+                    <div className="text-xs text-gray-500">E-commerce purchase</div>
+                  </div>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadSampleTemplate("registration")}
+                  className="text-left justify-start h-auto p-3"
+                >
+                  <div>
+                    <div className="font-medium text-sm">📝 Registration</div>
+                    <div className="text-xs text-gray-500">User signup process</div>
+                  </div>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadSampleTemplate("search")}
+                  className="text-left justify-start h-auto p-3"
+                >
+                  <div>
+                    <div className="font-medium text-sm">🔍 Product Search</div>
+                    <div className="text-xs text-gray-500">Search functionality</div>
+                  </div>
+                </Button>
+              </div>
+            </div>
+
+            <Textarea
+              id="natural-language-input"
+              placeholder="Describe your user flow in plain English...&#10;&#10;Example: 'User logs into the app, searches for products, adds items to cart, and completes checkout'"
+              value={naturalLanguageInput}
+              onChange={(e) => setNaturalLanguageInput(e.target.value)}
+              className="min-h-[120px] text-sm"
+            />
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={convertToTechnicalFormat}
+                disabled={!naturalLanguageInput.trim() || aiPreviewSteps.length === 0}
+                variant="outline"
+                size="sm"
+                className="flex-1"
+              >
+                <Wand2 className="w-4 h-4 mr-2" />
+                Convert to Technical
+              </Button>
+              <Button
+                onClick={handleRunSimulation}
+                disabled={(!testCaseInput.trim() && !naturalLanguageInput.trim()) || isRunning}
+                size="sm"
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                {isRunning ? (
+                  <>
+                    <Activity className="w-4 h-4 mr-2 animate-spin" />
+                    Running...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Run Simulation
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* AI Preview Panel */}
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              <span>AI Generated Steps</span>
+              {isGeneratingPreview && (
+                <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                  <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                  Generating...
+                </Badge>
+              )}
+            </CardTitle>
+            <p className="text-sm text-gray-600">
+              Watch as our AI analyzes your description and creates test steps
+            </p>
+          </CardHeader>
+          <CardContent>
+            {aiPreviewSteps.length > 0 ? (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {aiPreviewSteps.map((step, index) => (
+                  <div key={step.id} className="flex items-start space-x-3 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+                    <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
+                      {step.step}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-sm font-medium text-gray-900">{step.action}</h4>
+                        <Badge variant="outline" className="text-xs bg-white">
+                          {step.confidence}% confident
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-gray-600 mb-2">{step.description}</p>
+                      <div className="flex items-center text-xs text-purple-600">
+                        <ChevronRight className="w-3 h-3 mr-1" />
+                        <span className="font-medium">AI Reasoning:</span>
+                        <span className="ml-1">{step.reasoning}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : naturalLanguageInput.trim() ? (
+              <div className="text-center py-8">
+                <Sparkles className="w-12 h-12 text-purple-400 mx-auto mb-3" />
+                <p className="text-sm text-gray-600 mb-2">AI is analyzing your description...</p>
+                <p className="text-xs text-gray-500">Steps will appear here automatically</p>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Brain className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Ready for Your Description</h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Describe your user flow above, and watch our AI generate test steps in real-time
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadSampleTemplate("login")}
+                  className="text-xs"
+                >
+                  <Lightbulb className="w-3 h-3 mr-1" />
+                  Try Example Simulation
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Technical Input (Collapsible) */}
+        <Card className="xl:col-span-4">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <FileText className="w-5 h-5" />
-
-              <span>Test Case Input</span>
+              <span>Technical Input</span>
+              <Badge variant="outline" className="text-xs">
+                Advanced Mode
+              </Badge>
             </CardTitle>
+            <p className="text-sm text-gray-600">
+              For developers: paste JSON/YAML test cases or upload files
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <Tabs defaultValue="paste" className="w-full">
@@ -266,17 +568,14 @@ export default function AISimulationRunner() {
                   placeholder="Paste your test case here (JSON, YAML, or plain text format)..."
                   value={testCaseInput}
                   onChange={(e) => setTestCaseInput(e.target.value)}
-                  className="min-h-[200px] font-mono text-sm"
+                  className="min-h-[150px] font-mono text-sm"
                 />
               </TabsContent>
 
               <TabsContent value="upload" className="space-y-4">
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                   <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-
-                  <p className="text-sm text-gray-600 mb-2">
-                    Upload test case file
-                  </p>
+                  <p className="text-sm text-gray-600 mb-2">Upload test case file</p>
                   <input
                     type="file"
                     accept=".json,.yaml,.yml,.txt"
@@ -284,13 +583,10 @@ export default function AISimulationRunner() {
                     className="hidden"
                     id="file-upload"
                   />
-
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() =>
-                      document.getElementById("file-upload")?.click()
-                    }
+                    onClick={() => document.getElementById("file-upload")?.click()}
                   >
                     Choose File
                   </Button>
@@ -300,31 +596,10 @@ export default function AISimulationRunner() {
 
             <Alert>
               <AlertCircle className="h-4 w-4" />
-
               <AlertDescription>
-                Test cases will be automatically added to both Test Cases and
-                Test Suites modules
+                Test cases will be automatically added to both Test Cases and Test Suites modules
               </AlertDescription>
             </Alert>
-
-            <Button
-              onClick={handleRunSimulation}
-              disabled={!testCaseInput.trim() || isRunning}
-              className="w-full"
-              size="lg"
-            >
-              {isRunning ? (
-                <>
-                  <Activity className="w-4 h-4 mr-2 animate-spin" />
-                  Running Simulation...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  Run AI Simulation
-                </>
-              )}
-            </Button>
           </CardContent>
         </Card>
 
@@ -394,81 +669,112 @@ export default function AISimulationRunner() {
         )}
 
         {/* Simulation Progress */}
-        <Card>
+        <Card className="xl:col-span-4">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
-              <Activity className="w-5 h-5" />
-
+              <Activity className="w-5 h-5 text-blue-600" />
               <span>Simulation Progress</span>
+              {isRunning && (
+                <Badge variant="destructive" className="animate-pulse">
+                  <div className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse" />
+                  LIVE
+                </Badge>
+              )}
             </CardTitle>
+            <p className="text-sm text-gray-600">
+              Real-time execution of AI-generated test steps
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
             {isRunning || simulationSteps.length > 0 ? (
               <>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span>Progress</span>
-                    <span>{Math.round(simulationProgress)}%</span>
+                    <span className="font-medium">Progress</span>
+                    <span className="text-blue-600 font-bold">{Math.round(simulationProgress)}%</span>
                   </div>
-                  <Progress value={simulationProgress} className="w-full" />
+                  <Progress value={simulationProgress} className="w-full h-3" />
                 </div>
 
                 {currentStep && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-center space-x-2 mb-2">
-                      <Activity className="w-4 h-4 text-blue-600 animate-spin" />
-
-                      <span className="font-medium text-blue-900">
-                        Currently Running
-                      </span>
+                      <Activity className="w-5 h-5 text-blue-600 animate-spin" />
+                      <span className="font-semibold text-blue-900">Currently Executing</span>
                     </div>
-                    <p className="text-sm text-blue-800">
-                      {currentStep.action} - {currentStep.element}
+                    <p className="text-sm text-blue-800 font-medium">
+                      {currentStep.action}
+                    </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      {currentStep.element}
                     </p>
                   </div>
                 )}
 
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">Execution Steps</h4>
                   {simulationSteps.map((step) => (
                     <div
                       key={step.id}
-                      className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg"
+                      className="flex items-start space-x-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200"
                     >
-                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-
+                      <div className="flex-shrink-0 w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center">
+                        <CheckCircle className="w-4 h-4" />
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 mb-1">
                           <span className="text-sm font-medium text-gray-900">
                             {step.action}
                           </span>
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="outline" className="text-xs bg-white">
                             {step.timestamp}
                           </Badge>
                         </div>
-                        <p className="text-xs text-gray-600 mt-1">
+                        <p className="text-xs text-gray-600 mb-1">
                           {step.element}
                         </p>
                         {step.details && (
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-500">
                             {step.details}
                           </p>
                         )}
                       </div>
-                      <span className="text-xs text-gray-400">
-                        {step.duration}ms
-                      </span>
+                      <div className="text-right">
+                        <span className="text-xs text-gray-400">
+                          {step.duration}ms
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Eye className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-
-                <p>No simulation running</p>
-                <p className="text-sm">
-                  Start a simulation to see live progress
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Brain className="w-8 h-8 text-blue-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Ready to Run Your First AI Simulation
+                </h3>
+                <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                  Describe your user flow in plain English, or choose from our templates to get started instantly
                 </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button
+                    onClick={() => loadSampleTemplate("login")}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Lightbulb className="w-4 h-4 mr-2" />
+                    Try Example Simulation
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => document.getElementById("natural-language-input")?.focus()}
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Describe Your Flow
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

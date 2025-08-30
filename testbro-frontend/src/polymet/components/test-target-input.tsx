@@ -1,20 +1,14 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   Plus,
   Globe,
   Smartphone,
   Monitor,
-  Upload,
-  Edit,
-  Trash2,
-  Play,
   MoreHorizontal,
   CheckCircle,
   XCircle,
   Clock,
-  TrendingUp,
-  TrendingDown,
   AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,8 +43,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -75,29 +67,44 @@ interface NewTargetForm {
   appFile?: File;
 }
 
-const platformIcons = {
+const platformIcons: Record<NewTargetForm["platform"], LucideIcon> = {
   web: Globe,
   "mobile-web": Smartphone,
   "mobile-app": Monitor,
 };
 
-const statusConfig = {
-  active: { color: "bg-green-100 text-green-800", icon: CheckCircle },
-  inactive: { color: "bg-gray-100 text-gray-800", icon: XCircle },
-  maintenance: { color: "bg-yellow-100 text-yellow-800", icon: AlertCircle },
-};
+// Simple sparkline component
+const Sparkline = ({ data, isPositive }: { data: number[]; isPositive: boolean }) => {
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
 
-const lastRunStatusConfig = {
-  passed: { color: "text-green-600", icon: CheckCircle },
-  failed: { color: "text-red-600", icon: XCircle },
-  running: { color: "text-blue-600", icon: Clock },
-  cancelled: { color: "text-gray-600", icon: XCircle },
+  const points = data
+    .map((value, index) => {
+      const x = (index / (data.length - 1)) * 100;
+      const y = 100 - ((value - min) / range) * 100;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width="80" height="20" viewBox="0 0 100 100" className="overflow-visible">
+      <polyline
+        fill="none"
+        stroke={isPositive ? "#10B981" : "#EF4444"}
+        strokeWidth="2"
+        points={points}
+        className="transition-all duration-200"
+      />
+    </svg>
+  );
 };
 
 export default function TestTargetInput() {
   const [targets, setTargets] = useState<TestTarget[]>(mockTestTargets);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState<TestTarget | null>(null);
+  const [showOnlyFailing, setShowOnlyFailing] = useState(false);
   const [formData, setFormData] = useState<NewTargetForm>({
     name: "",
     url: "",
@@ -114,14 +121,13 @@ export default function TestTargetInput() {
 
     const newTarget: TestTarget = {
       id: editingTarget ? editingTarget.id : `target-${Date.now()}`,
+      projectId: editingTarget ? editingTarget.projectId : "default-project",
       name: formData.name,
       url: formData.url,
       platform: formData.platform,
       description: formData.description,
       status: "active",
-      createdAt: editingTarget
-        ? editingTarget.createdAt
-        : new Date().toISOString(),
+      createdAt: editingTarget ? editingTarget.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: "john.doe@testbro.ai",
       tags: formData.tags
@@ -135,9 +141,11 @@ export default function TestTargetInput() {
         required: formData.authRequired,
         type: formData.authRequired ? formData.authType : undefined,
       },
-    };
+      ...(editingTarget?.avgUxScore !== undefined && { avgUxScore: editingTarget?.avgUxScore }),
+    } as TestTarget;
 
     if (formData.appFile && formData.platform === "mobile-app") {
+      // @ts-ignore - TestTarget may include optional appFile in your model
       newTarget.appFile = {
         name: formData.appFile.name,
         size: formData.appFile.size,
@@ -147,9 +155,7 @@ export default function TestTargetInput() {
     }
 
     if (editingTarget) {
-      setTargets(
-        targets.map((t) => (t.id === editingTarget.id ? newTarget : t))
-      );
+      setTargets(targets.map((t) => (t.id === editingTarget.id ? newTarget : t)));
     } else {
       setTargets([...targets, newTarget]);
     }
@@ -182,7 +188,7 @@ export default function TestTargetInput() {
       environment: target.environment,
       tags: target.tags.join(", "),
       authRequired: target.authentication?.required || false,
-      authType: target.authentication?.type || "basic",
+      authType: (target.authentication?.type as NewTargetForm["authType"]) || "basic",
     });
     setIsDialogOpen(true);
   };
@@ -191,425 +197,255 @@ export default function TestTargetInput() {
     setTargets(targets.filter((t) => t.id !== targetId));
   };
 
-  const getUxTrend = (target: TestTarget) => {
-    // Mock trend calculation
-    const trend = Math.random() > 0.5 ? "up" : "down";
-    return trend;
+  const handleRunTarget = (targetId: string) => {
+    // Mock run action
+    setTargets((prev) =>
+      prev.map((t) =>
+        t.id === targetId
+          ? {
+              ...t,
+              totalRuns: (t.totalRuns || 0) + 1,
+              updatedAt: new Date().toISOString(),
+            }
+          : t
+      )
+    );
   };
 
+  // Generate mock trend data for sparklines (derived each render but memoized per target snapshot)
+  const passRateTrends = useMemo(() => {
+    const trends: Record<string, number[]> = {};
+    for (const t of targets) {
+      const base = t.passRate || 0;
+      const arr: number[] = [];
+      for (let i = 0; i < 7; i++) {
+        const v = Math.max(0, Math.min(100, base + (Math.random() - 0.5) * 10));
+        arr.push(v);
+      }
+      trends[t.id] = arr;
+    }
+    return trends;
+  }, [targets]);
+
+  const uxScoreTrends = useMemo(() => {
+    const trends: Record<string, number[]> = {};
+    for (const t of targets) {
+      const base = (t as any).avgUxScore || 0;
+      const arr: number[] = [];
+      for (let i = 0; i < 7; i++) {
+        const v = Math.max(0, Math.min(1, base + (Math.random() - 0.5) * 0.4));
+        arr.push(v);
+      }
+      trends[t.id] = arr;
+    }
+    return trends;
+  }, [targets]);
+
+  const filteredTargets = showOnlyFailing ? targets.filter((t) => (t.passRate ?? 0) < 70) : targets;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Test Targets</h1>
-          <p className="text-gray-600">
-            Manage target applications and websites for testing
-          </p>
-        </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Target
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>
-                {editingTarget ? "Edit Target" : "Add New Target"}
-              </DialogTitle>
-              <DialogDescription>
-                Configure a new target application or website for testing
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Target Name</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    placeholder="e.g., Production Website"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="platform">Platform</Label>
-                  <Select
-                    value={formData.platform}
-                    onValueChange={(
-                      value: "web" | "mobile-web" | "mobile-app"
-                    ) => setFormData({ ...formData, platform: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="web">Web Application</SelectItem>
-                      <SelectItem value="mobile-web">Mobile Web</SelectItem>
-                      <SelectItem value="mobile-app">Mobile App</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="url">
-                  {formData.platform === "mobile-app" ? "App Bundle ID" : "URL"}
-                </Label>
-                <Input
-                  id="url"
-                  value={formData.url}
-                  onChange={(e) =>
-                    setFormData({ ...formData, url: e.target.value })
-                  }
-                  placeholder={
-                    formData.platform === "mobile-app"
-                      ? "com.example.app"
-                      : "https://example.com"
-                  }
-                  required
-                />
-              </div>
-
-              {formData.platform === "mobile-app" && (
-                <div className="space-y-2">
-                  <Label htmlFor="appFile">App File (APK/IPA)</Label>
-                  <Input
-                    id="appFile"
-                    type="file"
-                    accept=".apk,.ipa"
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        appFile: e.target.files?.[0],
-                      })
-                    }
-                  />
-
-                  <p className="text-sm text-gray-500">
-                    Upload your mobile app file for testing
-                  </p>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  placeholder="Brief description of the target application"
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="environment">Environment</Label>
-                  <Select
-                    value={formData.environment}
-                    onValueChange={(
-                      value: "production" | "staging" | "development"
-                    ) => setFormData({ ...formData, environment: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="production">Production</SelectItem>
-                      <SelectItem value="staging">Staging</SelectItem>
-                      <SelectItem value="development">Development</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="tags">Tags</Label>
-                  <Input
-                    id="tags"
-                    value={formData.tags}
-                    onChange={(e) =>
-                      setFormData({ ...formData, tags: e.target.value })
-                    }
-                    placeholder="e.g., critical, mobile, api"
-                  />
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit">
-                  {editingTarget ? "Update Target" : "Add Target"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Targets</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {targets.length}
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Globe className="w-4 h-4 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Active</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {targets.filter((t) => t.status === "active").length}
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Avg Pass Rate</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {Math.round(
-                    targets.reduce((acc, t) => acc + (t.passRate || 0), 0) /
-                      targets.length
-                  )}
-                  %
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Runs</p>
-                <p className="text-2xl font-bold text-purple-600">
-                  {targets.reduce((acc, t) => acc + (t.totalRuns || 0), 0)}
-                </p>
-              </div>
-              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Play className="w-4 h-4 text-purple-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Targets Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Target Applications</CardTitle>
-          <CardDescription>
-            Manage and monitor your test target applications
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Target</TableHead>
-                <TableHead>Platform</TableHead>
-                <TableHead>Environment</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Run</TableHead>
-                <TableHead>Pass Rate</TableHead>
-                <TableHead>UX Score</TableHead>
-                <TableHead className="w-12"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {targets.map((target) => {
-                const PlatformIcon = platformIcons[target.platform];
-                const statusConf = statusConfig[target.status];
-                const StatusIcon = statusConf.icon;
-                const lastRunConf = target.lastRunStatus
-                  ? lastRunStatusConfig[target.lastRunStatus]
-                  : null;
-                const LastRunIcon = lastRunConf?.icon;
-                const uxTrend = getUxTrend(target);
-                const TrendIcon = uxTrend === "up" ? TrendingUp : TrendingDown;
-
-                return (
-                  <TableRow key={target.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <PlatformIcon className="w-4 h-4 text-gray-600" />
-                        </div>
-                        <div>
-                          <div className="font-medium">{target.name}</div>
-                          <div className="text-sm text-gray-500 truncate max-w-xs">
-                            {target.url}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {target.platform.replace("-", " ")}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={
-                          target.environment === "production"
-                            ? "bg-red-50 text-red-700 border-red-200"
-                            : target.environment === "staging"
-                              ? "bg-yellow-50 text-yellow-700 border-yellow-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
-                        }
-                      >
-                        {target.environment}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className={statusConf.color}>
-                        <StatusIcon className="w-3 h-3 mr-1" />
-
-                        {target.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {target.lastRunDate &&
-                      target.lastRunStatus &&
-                      LastRunIcon ? (
-                        <div className="flex items-center space-x-2">
-                          <LastRunIcon
-                            className={`w-4 h-4 ${lastRunConf.color}`}
-                          />
-
-                          <span className="text-sm text-gray-600">
-                            {new Date(target.lastRunDate).toLocaleDateString()}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-gray-400">Never</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium">
-                          {target.passRate?.toFixed(1)}%
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          ({target.totalRuns} runs)
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {target.avgUxScore ? (
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium">
-                            {target.avgUxScore}
-                          </span>
-                          <TrendIcon
-                            className={`w-3 h-3 ${uxTrend === "up" ? "text-green-500" : "text-red-500"}`}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-sm text-gray-400">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem asChild>
-                            <Link to={`/test-execution/${target.id}`}>
-                              <Play className="w-4 h-4 mr-2" />
-                              Run Tests
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link to={`/test-results/${target.id}`}>
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              View Results
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEdit(target)}>
-                            <Edit className="w-4 h-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => handleDelete(target.id)}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {targets.length === 0 && (
-        <div className="text-center py-12">
-          <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-            <Globe className="w-6 h-6 text-gray-400" />
+    <React.Fragment>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">Test Targets</h2>
+            <p className="text-sm text-muted-foreground">Manage and monitor your test target applications</p>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No targets configured
-          </h3>
-          <p className="text-gray-500 mb-4">
-            Add your first target application to start testing
-          </p>
-          <Button onClick={() => setIsDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Target
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant={showOnlyFailing ? "destructive" : "outline"} onClick={() => setShowOnlyFailing((v) => !v)}>
+              {showOnlyFailing ? "Showing Failing" : "Show Only Failing"}
+            </Button>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" /> Add Target
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>{editingTarget ? "Edit Target" : "Add Target"}</DialogTitle>
+                  <DialogDescription>Provide details about the application you want to test.</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Name</Label>
+                      <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="url">URL</Label>
+                      <Input id="url" value={formData.url} onChange={(e) => setFormData({ ...formData, url: e.target.value })} placeholder="https://example.com" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Platform</Label>
+                        <Select value={formData.platform} onValueChange={(v: any) => setFormData({ ...formData, platform: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="web">Web</SelectItem>
+                            <SelectItem value="mobile-web">Mobile Web</SelectItem>
+                            <SelectItem value="mobile-app">Mobile App</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Environment</Label>
+                        <Select value={formData.environment} onValueChange={(v: any) => setFormData({ ...formData, environment: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="production">Production</SelectItem>
+                            <SelectItem value="staging">Staging</SelectItem>
+                            <SelectItem value="development">Development</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tags">Tags (comma separated)</Label>
+                      <Input id="tags" value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} />
+                    </div>
+                    {formData.platform === "mobile-app" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="appFile">App File (.apk / .ipa)</Label>
+                        <Input id="appFile" type="file" accept=".apk,.ipa" onChange={(e) => setFormData({ ...formData, appFile: e.target.files?.[0] })} />
+                      </div>
+                    )}
+                  </div>
+                  <DialogFooter className="gap-2">
+                    <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>Cancel</Button>
+                    <Button type="submit">{editingTarget ? "Save Changes" : "Create Target"}</Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* Table */}
+        {filteredTargets.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Globe className="w-5 h-5 text-blue-600" />
+                <span>Target Applications</span>
+                {showOnlyFailing && (
+                  <Badge variant="destructive" className="ml-2">
+                    Showing {filteredTargets.length} failing targets
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription>Manage and monitor your test target applications</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Target</TableHead>
+                    <TableHead>Platform</TableHead>
+                    <TableHead>Environment</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Last Run</TableHead>
+                    <TableHead>Pass Rate</TableHead>
+                    <TableHead>UX Score</TableHead>
+                    <TableHead className="w-40">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTargets.map((target) => {
+                    const Icon = platformIcons[target.platform];
+                    const passTrend = passRateTrends[target.id] || [];
+                    const uxTrend = uxScoreTrends[target.id] || [];
+                    const uxScore = (target as any).avgUxScore as number | undefined;
+
+                    return (
+                      <TableRow key={target.id} className={(target.passRate ?? 0) < 70 ? "bg-red-50 border-l-4 border-red-500" : ""}>
+                        <TableCell className="font-medium">{target.name}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center">
+                            <Icon className="w-4 h-4 text-muted-foreground" />
+                            <span className="ml-2 capitalize">{target.platform.replace("-", " ")}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="capitalize">{target.environment}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={target.status === "active" ? "default" : "secondary"} className="capitalize">
+                            {target.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{target.updatedAt ? new Date(target.updatedAt).toLocaleString() : "—"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center">
+                            <span className="mr-2">{target.passRate}%</span>
+                            {passTrend.length > 0 && (
+                              <Sparkline data={passTrend} isPositive={(target.passRate ?? 0) >= 70} />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center">
+                            <span className="mr-2">{uxScore !== undefined ? uxScore.toFixed(2) : "—"}</span>
+                            {uxTrend.length > 0 && (
+                              <Sparkline data={uxTrend} isPositive={(uxScore ?? 0) >= 0.5} />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="default" onClick={() => handleRunTarget(target.id)}>
+                              Run
+                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="outline">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEdit(target)}>Edit</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDelete(target.id)}>Delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="text-center py-12">
+            <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <Globe className="w-6 h-6 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {showOnlyFailing ? "No failing targets found" : "No targets configured"}
+            </h3>
+            <p className="text-gray-500 mb-4">
+              {showOnlyFailing ? "All your targets are currently passing! 🎉" : "Add your first target application to start testing"}
+            </p>
+            <div className="flex items-center justify-center space-x-3">
+              {showOnlyFailing && (
+                <Button variant="outline" onClick={() => setShowOnlyFailing(false)}>
+                  Show All Targets
+                </Button>
+              )}
+              <Button onClick={() => setIsDialogOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Target
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </React.Fragment>
   );
 }

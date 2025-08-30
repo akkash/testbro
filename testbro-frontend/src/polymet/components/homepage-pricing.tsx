@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -9,27 +9,60 @@ import {
   Users,
   Building,
   Sparkles,
+  Code,
+  ShieldCheck,
+  Cpu,
+  Rocket,
+  Phone,
+  BarChart3,
+  Settings,
+  Cloud,
+  Lock,
+  Target,
+  User,
 } from "lucide-react";
 
 export default function HomepagePricing() {
+  const [showStickyCTA, setShowStickyCTA] = useState(false);
+
+  // Handle sticky CTA visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY;
+      const pricingSection = document.querySelector('.pricing-cards');
+      const pricingSectionTop = pricingSection?.offsetTop || 600;
+
+      setShowStickyCTA(scrollPosition > pricingSectionTop - 200);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   const plans = [
     {
-      name: "Starter",
+      name: "Developer Sandbox",
       price: "Free",
       period: "forever",
-      description: "Perfect for individual developers and small projects",
-      icon: Zap,
+      description: "Perfect for learning and small experiments",
+      icon: Code,
       color: "blue",
       popular: false,
+      badge: "No credit card required",
       features: [
-        "Up to 100 test executions/month",
-        "Basic AI test generation",
-        "5 test targets",
-        "Email support",
-        "Basic analytics",
-        "Community access",
+        { text: "Up to 100 test executions/month", icon: Zap },
+        { text: "Basic AI test generation", icon: Cpu },
+        { text: "5 test targets maximum", icon: Target },
+        { text: "Community support", icon: Users },
+        { text: "Basic analytics dashboard", icon: BarChart3 },
+        { text: "1 user account", icon: User },
       ],
-
+      limitations: [
+        "Limited test executions",
+        "No team collaboration",
+        "Basic AI capabilities",
+        "Community support only"
+      ],
       cta: "Start Free",
       ctaVariant: "outline" as const,
     },
@@ -37,22 +70,29 @@ export default function HomepagePricing() {
       name: "Professional",
       price: "$49",
       period: "per month",
-      description: "Ideal for growing teams and production applications",
+      description: "Perfect for growing teams and production applications",
       icon: Users,
       color: "purple",
       popular: true,
+      badge: "Most Popular",
       features: [
-        "Unlimited test executions",
-        "Advanced AI test generation",
-        "Unlimited test targets",
-        "Live browser automation",
-        "UX quality analysis",
-        "Priority support",
-        "Advanced analytics",
-        "Team collaboration",
-        "CI/CD integrations",
+        { text: "Unlimited test executions", icon: Zap },
+        { text: "Advanced AI test generation with GPT-4", icon: Cpu },
+        { text: "Unlimited test targets", icon: Target },
+        { text: "Live browser automation", icon: Rocket },
+        { text: "UX quality analysis & scoring", icon: Sparkles },
+        { text: "Priority email support (24h response)", icon: Phone },
+        { text: "Advanced analytics & reporting", icon: BarChart3 },
+        { text: "Team collaboration (up to 10 members)", icon: Users },
+        { text: "1-click CI/CD integrations", icon: Settings },
+        { text: "API access & webhooks", icon: Cloud },
+        { text: "Enterprise security (SOC 2)", icon: ShieldCheck },
       ],
-
+      highlights: [
+        "14-day free trial included",
+        "30-day money-back guarantee",
+        "Cancel anytime, no contracts"
+      ],
       cta: "Start Free Trial",
       ctaVariant: "default" as const,
     },
@@ -64,18 +104,27 @@ export default function HomepagePricing() {
       icon: Building,
       color: "indigo",
       popular: false,
+      badge: "Custom Solution",
       features: [
-        "Everything in Professional",
-        "Custom AI model training",
-        "Dedicated infrastructure",
-        "SSO & advanced security",
-        "Custom integrations",
-        "24/7 phone support",
-        "SLA guarantees",
-        "On-premise deployment",
-        "Custom reporting",
+        { text: "Everything in Professional", icon: Check },
+        { text: "Dedicated success manager", icon: Users },
+        { text: "Custom AI model training", icon: Cpu },
+        { text: "Dedicated infrastructure & SLAs", icon: Rocket },
+        { text: "SSO, SAML & advanced security", icon: Lock },
+        { text: "Unlimited team members", icon: Users },
+        { text: "24/7 phone & priority support", icon: Phone },
+        { text: "On-premise deployment option", icon: Cloud },
+        { text: "Custom integrations & APIs", icon: Settings },
+        { text: "Advanced compliance (ISO 27001, GDPR)", icon: ShieldCheck },
+        { text: "Custom reporting & dashboards", icon: BarChart3 },
+        { text: "Volume discounts & custom terms", icon: Sparkles },
       ],
-
+      enterpriseBenefits: [
+        "Dedicated infrastructure",
+        "Custom SLA guarantees",
+        "Priority feature requests",
+        "Onboarding & training included"
+      ],
       cta: "Contact Sales",
       ctaVariant: "outline" as const,
     },
@@ -108,7 +157,37 @@ export default function HomepagePricing() {
   };
 
   return (
-    <div className="py-24 bg-gray-50">
+    <div className="py-24 bg-gray-50 relative">
+      {/* Sticky CTA Header */}
+      <div className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        showStickyCTA ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
+      }`}>
+        <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <Zap className="w-5 h-5" />
+                  <span className="font-semibold">14-day free trial</span>
+                </div>
+                <div className="hidden sm:flex items-center space-x-4 text-sm opacity-90">
+                  <span>✓ No credit card required</span>
+                  <span>✓ Cancel anytime</span>
+                  <span>✓ Full Professional features</span>
+                </div>
+              </div>
+              <Button
+                className="bg-white text-purple-600 hover:bg-gray-100 font-semibold px-6"
+                size="sm"
+              >
+                Start Free Trial
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -149,7 +228,7 @@ export default function HomepagePricing() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16 pricing-cards">
           {plans.map((plan, index) => {
             const Icon = plan.icon;
             const colors = getColorClasses(plan.color, plan.popular);
@@ -157,66 +236,141 @@ export default function HomepagePricing() {
             return (
               <div
                 key={index}
-                className={`relative bg-white rounded-2xl p-8 ${colors.border} hover:shadow-lg transition-all duration-300`}
+                className={`relative bg-white rounded-2xl p-8 ${colors.border} hover:shadow-xl transition-all duration-300 ${
+                  plan.popular ? 'transform scale-105 shadow-2xl ring-4 ring-purple-100' : ''
+                }`}
               >
-                {/* Popular Badge */}
-                {plan.popular && (
+                {/* Badge */}
+                {(plan.popular || plan.badge) && (
                   <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <Badge className="bg-gradient-to-r from-purple-600 to-blue-600 text-white border-0">
-                      <Sparkles className="w-3 h-3 mr-1" />
-                      Most Popular
+                    <Badge className={`${
+                      plan.popular
+                        ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white border-0 shadow-lg'
+                        : 'bg-blue-100 text-blue-800 border-blue-200'
+                    }`}>
+                      {plan.popular && <Sparkles className="w-3 h-3 mr-1" />}
+                      {plan.badge || 'Most Popular'}
                     </Badge>
                   </div>
                 )}
 
                 {/* Plan Header */}
-                <div className="text-center mb-8">
+                <div className="text-center mb-6">
                   <div
-                    className={`w-12 h-12 rounded-xl ${colors.icon} flex items-center justify-center mx-auto mb-4`}
+                    className={`w-14 h-14 rounded-2xl ${colors.icon} flex items-center justify-center mx-auto mb-4 shadow-lg`}
                   >
-                    <Icon className="w-6 h-6" />
+                    <Icon className="w-7 h-7" />
                   </div>
 
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
                     {plan.name}
                   </h3>
-                  <p className="text-gray-600 text-sm mb-4">
+                  <p className="text-gray-600 text-sm mb-6 leading-relaxed">
                     {plan.description}
                   </p>
 
-                  <div className="mb-4">
-                    <span className="text-4xl font-bold text-gray-900">
+                  <div className="mb-6">
+                    <span className="text-5xl font-bold text-gray-900">
                       {plan.price}
                     </span>
                     {plan.period && (
-                      <span className="text-gray-500 ml-1">/{plan.period}</span>
+                      <span className="text-gray-500 text-lg ml-1">/{plan.period}</span>
                     )}
                   </div>
                 </div>
 
                 {/* Features */}
-                <div className="space-y-3 mb-8">
+                <div className="space-y-3 mb-6">
+                  <h4 className="font-semibold text-gray-900 text-sm mb-4">What's included:</h4>
                   {plan.features.map((feature, featureIndex) => (
                     <div
                       key={featureIndex}
                       className="flex items-start space-x-3"
                     >
-                      <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-
-                      <span className="text-gray-700 text-sm">{feature}</span>
+                      <div className="flex-shrink-0 mt-0.5">
+                        {typeof feature === 'object' && feature.icon ? (
+                          <feature.icon className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <Check className="w-4 h-4 text-green-500" />
+                        )}
+                      </div>
+                      <span className="text-gray-700 text-sm leading-relaxed">
+                        {typeof feature === 'object' ? feature.text : feature}
+                      </span>
                     </div>
                   ))}
                 </div>
 
+                {/* Limitations for free tier */}
+                {plan.limitations && plan.limitations.length > 0 && (
+                  <div className="space-y-2 mb-6 p-3 bg-red-50 rounded-lg border border-red-200">
+                    <h4 className="font-medium text-red-900 text-sm mb-2">Limitations:</h4>
+                    {plan.limitations.map((limitation, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <div className="w-1.5 h-1.5 bg-red-400 rounded-full"></div>
+                        <span className="text-red-700 text-xs">{limitation}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Highlights for Professional */}
+                {plan.highlights && plan.highlights.length > 0 && (
+                  <div className="space-y-2 mb-6">
+                    {plan.highlights.map((highlight, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <Check className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                        <span className="text-purple-700 text-sm font-medium">{highlight}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Enterprise Benefits */}
+                {plan.enterpriseBenefits && plan.enterpriseBenefits.length > 0 && (
+                  <div className="space-y-2 mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                    <h4 className="font-medium text-indigo-900 text-sm mb-3 flex items-center">
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Enterprise Benefits
+                    </h4>
+                    {plan.enterpriseBenefits.map((benefit, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <Check className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                        <span className="text-indigo-700 text-sm">{benefit}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* CTA Button */}
                 <Button
-                  className={`w-full ${plan.popular ? colors.button : `${colors.button} text-gray-700`}`}
+                  className={`w-full font-semibold ${
+                    plan.popular
+                      ? 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg transform hover:scale-105 transition-all duration-200'
+                      : `${colors.button} text-gray-700 hover:bg-gray-50`
+                  }`}
                   variant={plan.ctaVariant}
                   size="lg"
                 >
                   {plan.cta}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
+
+                {/* Trust indicators for Professional */}
+                {plan.popular && (
+                  <div className="mt-4 text-center">
+                    <div className="flex items-center justify-center space-x-4 text-xs text-gray-500">
+                      <span className="flex items-center">
+                        <ShieldCheck className="w-3 h-3 mr-1" />
+                        SOC 2 Compliant
+                      </span>
+                      <span className="flex items-center">
+                        <Lock className="w-3 h-3 mr-1" />
+                        Enterprise Security
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

@@ -24,6 +24,13 @@ import {
   Maximize2,
   Wifi,
   WifiOff,
+  Filter,
+  Calendar,
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  Target,
+  Layers,
 } from "lucide-react";
 import BrowserAutomationPlayer from "@/polymet/components/browser-automation-player";
 import {
@@ -107,18 +114,18 @@ const ExecutionCard = ({
   const config = statusConfig[execution.status as keyof typeof statusConfig] || statusConfig.cancelled;
   const StatusIcon = config.icon;
 
-  const deviceIcon = execution.browser?.includes("Mobile") || execution.environment?.includes("mobile") ? Smartphone : Monitor;
+    const deviceIcon = execution.browser?.includes("Mobile") || execution.environment?.includes("mobile") ? Smartphone : Monitor;
   const DeviceIcon = deviceIcon;
 
   return (
     <Card
       className={`${config.bgColor} border-l-4 cursor-pointer transition-all duration-200 ${
-        execution.status === "running" 
-          ? "border-l-blue-500" 
-          : execution.status === "passed" 
-          ? "border-l-green-500" 
-          : execution.status === "failed" 
-          ? "border-l-red-500" 
+        execution.status === "running"
+          ? "border-l-blue-500"
+          : execution.status === "passed"
+          ? "border-l-green-500"
+          : execution.status === "failed"
+          ? "border-l-red-500"
           : "border-l-gray-500"
       } ${
         isSelected ? "ring-2 ring-blue-500 shadow-md" : "hover:shadow-sm"
@@ -178,7 +185,7 @@ const ExecutionCard = ({
             <div>
               <span className="text-gray-500">Start Time:</span>
               <p className="font-medium">
-                {execution.started_at 
+                {execution.started_at
                   ? new Date(execution.started_at).toLocaleTimeString()
                   : 'Not started'
                 }
@@ -261,22 +268,145 @@ const ExecutionCard = ({
   );
 };
 
+// Timeline Component for last 10 executions
+const ExecutionTimeline = ({ executions, onSelectExecution }: { executions: any[], onSelectExecution: (id: string) => void }) => {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center space-x-2">
+          <Calendar className="w-5 h-5 text-blue-600" />
+          <span>Execution Timeline</span>
+          <Badge variant="outline" className="text-xs">
+            Last 10 Runs
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Chronological view of recent test executions
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {executions.map((execution, index) => {
+            const statusConfig = {
+              running: { color: "bg-blue-500", icon: Play, textColor: "text-blue-700" },
+              passed: { color: "bg-green-500", icon: CheckCircle, textColor: "text-green-700" },
+              failed: { color: "bg-red-500", icon: XCircle, textColor: "text-red-700" },
+              cancelled: { color: "bg-gray-500", icon: Square, textColor: "text-gray-700" },
+            };
+
+            const config = statusConfig[execution.status as keyof typeof statusConfig] || statusConfig.cancelled;
+            const StatusIcon = config.icon;
+
+            return (
+              <div key={execution.id} className="flex items-start space-x-4 relative">
+                {/* Timeline line */}
+                {index < executions.length - 1 && (
+                  <div className="absolute left-6 top-12 w-0.5 h-16 bg-gray-200"></div>
+                )}
+
+                {/* Status indicator */}
+                <div className={`flex-shrink-0 w-12 h-12 rounded-full border-4 border-white shadow-md flex items-center justify-center ${config.color}`}>
+                  <StatusIcon className="w-5 h-5 text-white" />
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 pb-8">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <h4 className="text-sm font-medium text-gray-900">
+                        Test Case #{execution.test_case_id?.slice(-6) || execution.id.slice(-6)}
+                      </h4>
+                      <Badge variant="outline" className={`text-xs ${config.textColor}`}>
+                        {execution.status}
+                      </Badge>
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {execution.started_at ? new Date(execution.started_at).toLocaleString() : 'Not started'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-4 text-xs text-gray-600 mb-3">
+                    <span className="flex items-center">
+                      <Monitor className="w-3 h-3 mr-1" />
+                      {execution.browser || 'Unknown'}
+                    </span>
+                    <span className="flex items-center">
+                      <Globe className="w-3 h-3 mr-1" />
+                      {execution.environment || 'Unknown'}
+                    </span>
+                    {execution.duration_seconds && (
+                      <span className="flex items-center">
+                        <Clock className="w-3 h-3 mr-1" />
+                        {Math.round(execution.duration_seconds / 60)}m {execution.duration_seconds % 60}s
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Metrics summary */}
+                  {execution.metrics && (
+                    <div className="flex items-center space-x-4 text-xs">
+                      {execution.metrics.uxScore && (
+                        <div className="flex items-center space-x-1">
+                          <Bot className="w-3 h-3 text-purple-500" />
+                          <span className="text-purple-700">UX: {execution.metrics.uxScore}</span>
+                        </div>
+                      )}
+                      {execution.metrics.responseTime && (
+                        <div className="flex items-center space-x-1">
+                          <Zap className="w-3 h-3 text-yellow-500" />
+                          <span className="text-yellow-700">{execution.metrics.responseTime}ms</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Error message if failed */}
+                  {execution.status === 'failed' && execution.error_message && (
+                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                      {execution.error_message}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onSelectExecution(execution.id)}
+                  className="flex-shrink-0"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 interface ExecutionMonitorProps {
   projectId?: string;
   targetId?: string;
   refreshInterval?: number;
 }
 
-export default function TestExecutionMonitor({ 
-  projectId, 
+export default function TestExecutionMonitor({
+  projectId,
   targetId,
-  refreshInterval = 5000 
+  refreshInterval = 5000
 }: ExecutionMonitorProps = {}) {
   const { isAuthenticated } = useAuth();
   const [executions, setExecutions] = useState<any[]>([]);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // New state for filtering and timeline
+  const [filterFailedOnly, setFilterFailedOnly] = useState(false);
+  const [viewMode, setViewMode] = useState<"cards" | "timeline">("cards");
+  const [lastSuiteId, setLastSuiteId] = useState<string | null>(null);
   
   // WebSocket connection
   const { connectionState } = useWebSocket();
@@ -338,11 +468,63 @@ export default function TestExecutionMonitor({
 
   useEffect(() => {
     loadExecutions();
-    
+
     // Set up polling for real-time updates
     const interval = setInterval(loadExecutions, refreshInterval);
     return () => clearInterval(interval);
   }, [isAuthenticated, projectId, targetId, refreshInterval]);
+
+  // Filter executions based on current filter settings
+  const filteredExecutions = executions.filter((execution: any) => {
+    if (filterFailedOnly) {
+      return execution.status === 'failed';
+    }
+    return true;
+  });
+
+  // Get last 10 executions for timeline view
+  const timelineExecutions = executions.slice(0, 10);
+
+  // Get stats for today
+  const today = new Date();
+  const todayString = today.toDateString();
+  const todaysExecutions = executions.filter((execution: any) => {
+    const executionDate = new Date(execution.started_at || execution.created_at);
+    return executionDate.toDateString() === todayString;
+  });
+
+  const completedToday = todaysExecutions.filter((exec: any) => exec.status === 'passed').length;
+  const failedToday = todaysExecutions.filter((exec: any) => exec.status === 'failed').length;
+
+  // Function to run last suite again
+  const runLastSuiteAgain = async () => {
+    if (!lastSuiteId) return;
+
+    try {
+      // Mock implementation - in real app this would call the actual service
+      console.log(`Running last suite: ${lastSuiteId}`);
+      // const { error } = await TestSuiteService.executeTestSuite(lastSuiteId);
+      // if (error) {
+      //   console.error('Failed to run test suite:', error);
+      // } else {
+      //   console.log('Test suite execution started:', lastSuiteId);
+      //   loadExecutions(); // Refresh data
+      // }
+    } catch (err) {
+      console.error('Error running last suite:', err);
+    }
+  };
+
+  // Update lastSuiteId when executions change
+  useEffect(() => {
+    if (executions.length > 0) {
+      // Find the most recent execution and extract suite ID
+      const mostRecent = executions[0];
+      // Mock suite ID extraction - in real app this would come from execution data
+      const suiteId = mostRecent.suite_id || mostRecent.test_suite_id || `suite-${Math.floor(Math.random() * 1000)}`;
+      setLastSuiteId(suiteId);
+    }
+  }, [executions]);
 
   if (loading) {
     return (
@@ -390,9 +572,14 @@ export default function TestExecutionMonitor({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">
-          Test Execution Monitor
-        </h2>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">
+            Test Execution Monitor
+          </h2>
+          <p className="text-gray-600 mt-1">
+            Real-time monitoring and execution history
+          </p>
+        </div>
         <div className="flex items-center space-x-2">
           {/* WebSocket Connection Status */}
           <div className="flex items-center space-x-2">
@@ -426,21 +613,140 @@ export default function TestExecutionMonitor({
         </div>
       </div>
 
-      {executions.length === 0 ? (
-        <div className="text-center py-12">
-          <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No executions found
-          </h3>
-          <p className="text-gray-500">
-            No test executions are currently running or available.
-          </p>
+      {/* Today's Stats */}
+      {executions.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Completed Today</p>
+                  <p className="text-2xl font-bold text-green-600">{completedToday}</p>
+                </div>
+                <CheckCircle className="w-8 h-8 text-green-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Failed Today</p>
+                  <p className="text-2xl font-bold text-red-600">{failedToday}</p>
+                </div>
+                <XCircle className="w-8 h-8 text-red-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Total Executions</p>
+                  <p className="text-2xl font-bold text-blue-600">{executions.length}</p>
+                </div>
+                <Activity className="w-8 h-8 text-blue-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Running Now</p>
+                  <p className="text-2xl font-bold text-purple-600">{runningExecutions.length}</p>
+                </div>
+                <Play className="w-8 h-8 text-purple-500" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
+      )}
+
+      {/* Controls and Filters */}
+      {executions.length > 0 && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            {/* View Mode Toggle */}
+            <div className="flex items-center border rounded-lg">
+              <Button
+                variant={viewMode === "cards" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("cards")}
+                className="rounded-r-none"
+              >
+                Cards
+              </Button>
+              <Button
+                variant={viewMode === "timeline" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("timeline")}
+                className="rounded-l-none"
+              >
+                Timeline
+              </Button>
+            </div>
+
+            {/* Filter Toggle */}
+            <Button
+              variant={filterFailedOnly ? "destructive" : "outline"}
+              size="sm"
+              onClick={() => setFilterFailedOnly(!filterFailedOnly)}
+            >
+              <Filter className="w-4 h-4 mr-2" />
+              {filterFailedOnly ? "Show All" : "Failed Only"}
+            </Button>
+          </div>
+
+          {/* Run Last Suite CTA */}
+          {lastSuiteId && (
+            <Button onClick={runLastSuiteAgain} className="bg-blue-600 hover:bg-blue-700">
+              <Play className="w-4 h-4 mr-2" />
+              Run Last Suite Again
+            </Button>
+          )}
+        </div>
+      )}
+
+      {executions.length === 0 ? (
+        <div className="text-center py-16">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Activity className="w-10 h-10 text-blue-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-900 mb-3">
+            No Test Executions Yet
+          </h3>
+          <p className="text-gray-600 mb-8 max-w-md mx-auto">
+            Start your first test execution to see real-time monitoring and execution history here.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button
+              onClick={runLastSuiteAgain}
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={!lastSuiteId}
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Run Last Suite Again
+            </Button>
+            <Button variant="outline" onClick={loadExecutions}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      ) : viewMode === "timeline" ? (
+        <ExecutionTimeline
+          executions={filteredExecutions}
+          onSelectExecution={setSelectedExecutionId}
+        />
       ) : (
         <div className="space-y-4">
-          {executions.slice(0, 5).map((execution: any) => (
-            <ExecutionCard 
-              key={execution.id} 
+          {filteredExecutions.slice(0, 10).map((execution: any) => (
+            <ExecutionCard
+              key={execution.id}
               execution={execution}
               isSelected={execution.id === selectedExecutionId}
               realTimeProgress={execution.id === selectedExecutionId ? realTimeProgress : null}
@@ -448,176 +754,121 @@ export default function TestExecutionMonitor({
               onClick={() => setSelectedExecutionId(execution.id)}
             />
           ))}
+
+          {filteredExecutions.length === 0 && filterFailedOnly && (
+            <div className="text-center py-12">
+              <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No Failed Executions
+              </h3>
+              <p className="text-gray-500 mb-4">
+                Great! All your recent executions have passed successfully.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => setFilterFailedOnly(false)}
+              >
+                Show All Executions
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
-      <Tabs defaultValue="running" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="running">
-            Running ({runningExecutions.length})
-          </TabsTrigger>
-          <TabsTrigger value="completed">
-            Completed ({completedExecutions.length})
-          </TabsTrigger>
-          <TabsTrigger value="logs">Logs ({recentLogs.length})</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="running" className="space-y-4">
-          {runningExecutions.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No running executions
-                </h3>
-                <p className="text-gray-500">
-                  All tests have completed or no tests are currently running.
-                </p>
-                {!connectionState.connected && (
-                  <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <div className="flex items-center justify-center space-x-2">
-                      <WifiOff className="w-4 h-4 text-yellow-600" />
-                      <span className="text-sm text-yellow-700">
-                        Real-time updates unavailable - WebSocket disconnected
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {runningExecutions.map((execution: any) => (
-                <ExecutionCard 
-                  key={execution.id} 
-                  execution={execution}
-                  isSelected={execution.id === selectedExecutionId}
-                  realTimeProgress={execution.id === selectedExecutionId ? realTimeProgress : null}
-                  realTimeSteps={execution.id === selectedExecutionId ? realTimeSteps : []}
-                  onClick={() => setSelectedExecutionId(execution.id)}
-                />
-              ))}
-              {connectionState.connected && runningExecutions.length > 0 && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <Wifi className="w-4 h-4 text-green-600 animate-pulse" />
-                    <span className="text-sm text-green-700 font-medium">
-                      Real-time monitoring active
-                    </span>
-                    <Badge variant="outline" className="text-xs text-green-700">
-                      {runningExecutions.length} live execution{runningExecutions.length > 1 ? 's' : ''}
-                    </Badge>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="completed" className="space-y-4">
-          <div className="space-y-4">
-            {completedExecutions.map((execution: any) => (
-              <ExecutionCard 
-                key={execution.id} 
-                execution={execution}
-                isSelected={execution.id === selectedExecutionId}
-                onClick={() => setSelectedExecutionId(execution.id)}
-              />
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="logs">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Real-time Execution Logs</CardTitle>
-                  <CardDescription>
-                    Live logs from test executions via WebSocket
-                  </CardDescription>
-                </div>
-                <div className="flex items-center space-x-2">
-                  {connectionState.connected ? (
-                    <Badge variant="outline" className="text-green-700 border-green-300">
-                      <Wifi className="w-3 h-3 mr-1" />
-                      Live Feed
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-red-700 border-red-300">
-                      <WifiOff className="w-3 h-3 mr-1" />
-                      Static Logs
-                    </Badge>
-                  )}
-                </div>
+      {/* Real-time Logs Section */}
+      {executions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center space-x-2">
+                  <Terminal className="w-5 h-5 text-gray-600" />
+                  <span>Real-time Execution Logs</span>
+                </CardTitle>
+                <CardDescription>
+                  Live logs from test executions via WebSocket
+                </CardDescription>
               </div>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-96">
-                <div className="space-y-2">
-                  {recentLogs.map((log: any, index: number) => {
-                    const isRealTime = selectedExecutionId && realTimeLogs.includes(log);
-                    return (
-                      <div 
-                        key={index} 
-                        className={`text-sm font-mono p-3 rounded border-l-2 ${
-                          isRealTime ? 'bg-green-50 border-l-green-400 animate-pulse' : 'bg-gray-50 border-l-gray-300'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-gray-500 text-xs">
-                            [{new Date(log.timestamp || log.created_at).toLocaleTimeString()}]
-                          </span>
-                          {isRealTime && (
-                            <Badge variant="outline" className="text-xs text-green-700">
-                              Live
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-start space-x-2">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            log.level === 'error' ? 'bg-red-100 text-red-800' : 
-                            log.level === 'warn' ? 'bg-yellow-100 text-yellow-800' : 
-                            log.level === 'info' ? 'bg-blue-100 text-blue-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {(log.level || 'info').toUpperCase()}
-                          </span>
-                          <span className={`flex-1 ${
-                            log.level === 'error' ? 'text-red-700' : 
-                            log.level === 'warn' ? 'text-yellow-700' : 
-                            'text-gray-900'
-                          }`}>
-                            {log.message || log.content || 'No message'}
-                          </span>
-                        </div>
-                        {log.step_id && (
-                          <div className="mt-1 text-xs text-gray-500">
-                            Step: {log.step_id}
-                          </div>
+              <div className="flex items-center space-x-2">
+                {connectionState.connected ? (
+                  <Badge variant="outline" className="text-green-700 border-green-300">
+                    <Wifi className="w-3 h-3 mr-1" />
+                    Live Feed
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-red-700 border-red-300">
+                    <WifiOff className="w-3 h-3 mr-1" />
+                    Static Logs
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-64">
+              <div className="space-y-2">
+                {recentLogs.map((log: any, index: number) => {
+                  const isRealTime = selectedExecutionId && realTimeLogs.includes(log);
+                  return (
+                    <div
+                      key={index}
+                      className={`text-sm font-mono p-3 rounded border-l-2 ${
+                        isRealTime ? 'bg-green-50 border-l-green-400 animate-pulse' : 'bg-gray-50 border-l-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-gray-500 text-xs">
+                          [{new Date(log.timestamp || log.created_at).toLocaleTimeString()}]
+                        </span>
+                        {isRealTime && (
+                          <Badge variant="outline" className="text-xs text-green-700">
+                            Live
+                          </Badge>
                         )}
                       </div>
-                    );
-                  })}
-                  {recentLogs.length === 0 && (
-                    <div className="text-center py-8">
-                      <Terminal className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-gray-500 text-sm">
-                        {connectionState.connected ? 'Waiting for logs...' : 'No logs available'}
-                      </p>
-                      {!connectionState.connected && (
-                        <p className="text-gray-400 text-xs mt-1">
-                          Connect to WebSocket for real-time logs
-                        </p>
+                      <div className="flex items-start space-x-2">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          log.level === 'error' ? 'bg-red-100 text-red-800' :
+                          log.level === 'warn' ? 'bg-yellow-100 text-yellow-800' :
+                          log.level === 'info' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {(log.level || 'info').toUpperCase()}
+                        </span>
+                        <span className={`flex-1 ${
+                          log.level === 'error' ? 'text-red-700' :
+                          log.level === 'warn' ? 'text-yellow-700' :
+                          'text-gray-900'
+                        }`}>
+                          {log.message || log.content || 'No message'}
+                        </span>
+                      </div>
+                      {log.step_id && (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Step: {log.step_id}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                  );
+                })}
+                {recentLogs.length === 0 && (
+                  <div className="text-center py-8">
+                    <Terminal className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-500 text-sm">
+                      {connectionState.connected ? 'Waiting for logs...' : 'No logs available'}
+                    </p>
+                    {!connectionState.connected && (
+                      <p className="text-gray-400 text-xs mt-1">
+                        Connect to WebSocket for real-time logs
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

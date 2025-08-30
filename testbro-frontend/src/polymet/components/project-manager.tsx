@@ -19,6 +19,10 @@ import {
   Smartphone,
   Monitor,
   Loader2,
+  Play,
+  Zap,
+  TrendingDown,
+  Clock,
 } from "lucide-react";
 import ProjectCreationDialog from "@/polymet/components/project-creation-dialog";
 import { Button } from "@/components/ui/button";
@@ -67,6 +71,17 @@ const ProjectCard = ({ project }: { project: Project }) => {
   const totalTestCases = project.test_cases_count || 0;
   const avgPassRate = 85; // TODO: Calculate from actual metrics when available
 
+  // Mock recent failures data (would come from API)
+  const recentFailures = [
+    { name: "Login Form Validation", time: "2 hours ago", severity: "high" },
+    { name: "Checkout Process", time: "5 hours ago", severity: "medium" },
+  ];
+
+  const handleRunAllTests = () => {
+    console.log(`Running all tests for project: ${project.name}`);
+    // TODO: Implement test execution logic
+  };
+
 
 
   const getPlatformIcon = (platform: string) => {
@@ -83,8 +98,8 @@ const ProjectCard = ({ project }: { project: Project }) => {
   };
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardHeader className="pb-3">
+    <Card className="hover:shadow-lg transition-all duration-200 border-l-4 border-l-blue-500">
+      <CardHeader className="pb-4">
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <CardTitle className="text-lg mb-1">{project.name}</CardTitle>
@@ -92,136 +107,144 @@ const ProjectCard = ({ project }: { project: Project }) => {
               {project.description}
             </CardDescription>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
-                <MoreHorizontal className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuSeparator />
+          <div className="flex items-center space-x-2">
+            {/* Run All Tests Button */}
+            <Button
+              size="sm"
+              onClick={handleRunAllTests}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Zap className="w-3 h-3 mr-1" />
+              Run All Tests
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuSeparator />
 
-              <DropdownMenuItem>
-                <Settings className="w-4 h-4 mr-2" />
-                Project Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Users className="w-4 h-4 mr-2" />
-                Manage Team
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Target className="w-4 h-4 mr-2" />
-                Add Target
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <TestTube className="w-4 h-4 mr-2" />
-                View Test Cases
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <Settings className="w-4 h-4 mr-2" />
+                  Project Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Users className="w-4 h-4 mr-2" />
+                  Manage Team
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Target className="w-4 h-4 mr-2" />
+                  Add Target
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <TestTube className="w-4 h-4 mr-2" />
+                  View Test Cases
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
 
-              <DropdownMenuItem className="text-red-600">
-                <XCircle className="w-4 h-4 mr-2" />
-                Archive Project
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuItem className="text-red-600">
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Archive Project
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           {/* Status and Tags */}
-          <div className="flex items-center flex-wrap gap-2">
-            <Badge variant="secondary" className={config.color}>
-              <StatusIcon className="w-3 h-3 mr-1" />
-
-              {project.status}
-            </Badge>
-            {project.tags.slice(0, 2).map((tag) => (
-              <Badge key={tag} variant="outline" className="text-xs">
-                {tag}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center flex-wrap gap-2">
+              <Badge variant="secondary" className={config.color}>
+                <StatusIcon className="w-3 h-3 mr-1" />
+                {project.status}
               </Badge>
-            ))}
-            {project.tags.length > 2 && (
-              <Badge variant="outline" className="text-xs">
-                +{project.tags.length - 2} more
-              </Badge>
-            )}
-          </div>
-
-          {/* Project Metrics */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Targets</span>
-                <span className="font-medium">
-                  {activeTargets}/{totalTargets}
-                </span>
-              </div>
-              <Progress
-                value={(activeTargets / (totalTargets || 1)) * 100}
-                className="h-2"
-              />
+              {project.tags.slice(0, 3).map((tag) => (
+                <Badge key={tag} variant="outline" className="text-xs">
+                  {tag}
+                </Badge>
+              ))}
             </div>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Pass Rate</span>
-                <span className="font-medium">{avgPassRate.toFixed(1)}%</span>
-              </div>
-              <Progress value={avgPassRate} className="h-2" />
+            <div className="flex items-center space-x-2 text-sm">
+              <Globe className="w-4 h-4 text-gray-500" />
+              <span className="text-gray-600">{totalTargets} targets</span>
             </div>
           </div>
 
-          {/* Targets Preview */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">
-                Targets ({totalTargets})
-              </span>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                View All
-              </Button>
+          {/* Key Metrics */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg">
+              <div className="text-2xl font-bold text-blue-700">{totalTestCases}</div>
+              <div className="text-xs text-blue-600">Test Cases</div>
             </div>
-            {totalTargets > 0 ? (
-              <div className="p-2 bg-gray-50 rounded-md">
+            <div className="text-center p-3 bg-gradient-to-br from-green-50 to-green-100 rounded-lg">
+              <div className="text-2xl font-bold text-green-700">{avgPassRate}%</div>
+              <div className="text-xs text-green-600">Pass Rate</div>
+            </div>
+            <div className="text-center p-3 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg">
+              <div className="text-2xl font-bold text-purple-700">{totalTargets}</div>
+              <div className="text-xs text-purple-600">Targets</div>
+            </div>
+          </div>
+
+          {/* Recent Failures */}
+          {recentFailures.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <Globe className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm font-medium">{totalTargets} configured</span>
-                  <Badge variant="outline" className="bg-green-100 text-green-800">
-                    active
+                  <TrendingDown className="w-4 h-4 text-red-500" />
+                  <span className="text-sm font-medium text-gray-700">Recent Failures</span>
+                  <Badge variant="destructive" className="text-xs">
+                    {recentFailures.length}
                   </Badge>
                 </div>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" asChild>
+                  <Link to={`/test-results/${project.id}`}>View All</Link>
+                </Button>
               </div>
-            ) : (
-              <div className="text-xs text-gray-500 text-center py-2">
-                No targets configured
+              <div className="space-y-2">
+                {recentFailures.slice(0, 2).map((failure, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-red-50 rounded-md border border-red-100">
+                    <div className="flex items-center space-x-2">
+                      <XCircle className="w-3 h-3 text-red-500" />
+                      <span className="text-xs font-medium text-red-900">{failure.name}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${
+                          failure.severity === 'high'
+                            ? 'border-red-300 text-red-700'
+                            : 'border-orange-300 text-orange-700'
+                        }`}
+                      >
+                        {failure.severity}
+                      </Badge>
+                      <span className="text-xs text-gray-500">{failure.time}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Team Members */}
-          <div className="flex items-center justify-between">
+          {/* Team and Last Updated */}
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
             <div className="flex items-center space-x-2">
               <Users className="w-4 h-4 text-gray-500" />
-              <span className="text-sm text-gray-600">Team</span>
-            </div>
-            <div className="flex -space-x-2">
-              {/* TODO: Add team members when available in Project interface */}
-              <div className="w-6 h-6 bg-gray-100 border-2 border-white rounded-full flex items-center justify-center">
-                <span className="text-xs text-gray-600">1</span>
+              <div className="flex -space-x-2">
+                <div className="w-6 h-6 bg-gray-100 border-2 border-white rounded-full flex items-center justify-center">
+                  <span className="text-xs text-gray-600">1</span>
+                </div>
               </div>
+              <span className="text-xs text-gray-600">member</span>
             </div>
-          </div>
-
-          {/* Quick Stats */}
-          <div className="flex items-center justify-between text-sm text-gray-500 pt-2 border-t">
-            <div className="flex items-center space-x-1">
-              <TestTube className="w-3 h-3" />
-
-              <span>{totalTestCases} test cases</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Calendar className="w-3 h-3" />
+            <div className="flex items-center space-x-1 text-xs text-gray-500">
+              <Clock className="w-3 h-3" />
               <span>{new Date(project.updated_at).toLocaleDateString()}</span>
             </div>
           </div>
@@ -505,6 +528,40 @@ export default function ProjectManager() {
           <ProjectCard key={project.id} project={project} />
         ))}
       </div>
+
+      {/* Archived Projects Section */}
+      {stats.archived > 0 && statusFilter === "all" && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-5 h-5 text-orange-500" />
+              <h2 className="text-lg font-semibold text-gray-900">Archived Projects</h2>
+              <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                {stats.archived}
+              </Badge>
+            </div>
+            <Button variant="outline" size="sm">
+              <Settings className="w-4 h-4 mr-2" />
+              Manage Archives
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-75">
+            {projects
+              .filter((project) => project.status === "archived")
+              .slice(0, 3)
+              .map((project) => (
+                <ProjectCard key={project.id} project={project} />
+              ))}
+          </div>
+          {stats.archived > 3 && (
+            <div className="text-center mt-4">
+              <Button variant="ghost" size="sm">
+                View All Archived Projects ({stats.archived})
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {filteredProjects.length === 0 && (
         <div className="text-center py-12">

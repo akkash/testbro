@@ -20,6 +20,11 @@ import {
   FolderOpen,
   Target,
   Loader2,
+  Zap,
+  Eye,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,12 +59,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TestCaseService, TestCase } from "@/lib/services/testCaseService";
 import { ProjectService, Project } from "@/lib/services/projectService";
 import { useAuth } from "@/contexts/AuthContext";
 
 const TestCaseCard = ({ testCase, projects }: { testCase: TestCase; projects: Project[] }) => {
+  const [showStepsPreview, setShowStepsPreview] = useState(false);
+
   const statusConfig = {
     draft: { color: "bg-gray-100 text-gray-800", icon: AlertCircle },
     active: { color: "bg-green-100 text-green-800", icon: CheckCircle },
@@ -73,58 +86,111 @@ const TestCaseCard = ({ testCase, projects }: { testCase: TestCase; projects: Pr
     critical: "bg-red-100 text-red-800",
   };
 
+  const lastRunStatusConfig = {
+    passed: { color: "bg-green-500", icon: CheckCircle },
+    failed: { color: "bg-red-500", icon: XCircle },
+    running: { color: "bg-blue-500", icon: Clock },
+    pending: { color: "bg-gray-400", icon: Clock },
+  };
+
   const config = statusConfig[testCase.status];
   const StatusIcon = config.icon;
 
   // Find the project this test case belongs to
   const project = projects.find((p) => p.id === testCase.project_id);
 
+  // Mock last run data
+  const lastRun = {
+    status: Math.random() > 0.3 ? "passed" : "failed", // 70% pass rate for demo
+    date: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // Random date in last week
+    duration: Math.floor(Math.random() * 120) + 30, // 30-150 seconds
+  };
+
+  const lastRunConfig = lastRunStatusConfig[lastRun.status as keyof typeof lastRunStatusConfig];
+  const LastRunIcon = lastRunConfig.icon;
+
+  const handleRunTest = () => {
+    console.log(`Running test case: ${testCase.name}`);
+    // TODO: Implement test execution logic
+  };
+
+  const handleAISuggestion = () => {
+    console.log(`Getting AI suggestion for: ${testCase.name}`);
+    // TODO: Implement AI suggestion logic
+  };
+
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="hover:shadow-lg transition-all duration-200 border-l-4 border-l-blue-500">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="text-lg mb-1">{testCase.name}</CardTitle>
+            <div className="flex items-center space-x-3 mb-1">
+              <CardTitle className="text-lg">{testCase.name}</CardTitle>
+              {/* Last Run Status Indicator */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className={`w-3 h-3 rounded-full ${lastRunConfig.color} flex-shrink-0`} />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Last run: {lastRun.status} • {lastRun.date.toLocaleDateString()} • {lastRun.duration}s</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <CardDescription className="text-sm">
               {testCase.description}
             </CardDescription>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
-                <MoreHorizontal className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuSeparator />
+          <div className="flex items-center space-x-2">
+            {/* Run Now Button */}
+            <Button
+              size="sm"
+              onClick={handleRunTest}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Zap className="w-3 h-3 mr-1" />
+              Run Now
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuSeparator />
 
-              <DropdownMenuItem>
-                <Play className="w-4 h-4 mr-2" />
-                Run Test
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/ai-simulation">
-                  <Bot className="w-4 h-4 mr-2" />
-                  AI Simulation
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Edit className="w-4 h-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Copy className="w-4 h-4 mr-2" />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to={`/test-results/${testCase.id}`}>
+                    <Eye className="w-4 h-4 mr-2" />
+                    View Results
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/ai-simulation">
+                    <Bot className="w-4 h-4 mr-2" />
+                    AI Simulation
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Copy className="w-4 h-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
 
-              <DropdownMenuItem className="text-red-600">
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuItem className="text-red-600">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -205,11 +271,85 @@ const TestCaseCard = ({ testCase, projects }: { testCase: TestCase; projects: Pr
             </div>
           </div>
 
-          {/* Steps Preview */}
-          <div className="text-sm text-gray-600">
-            <span className="font-medium">{testCase.steps.length} steps</span>
-            <span className="mx-2">•</span>
-            <span>Priority: {testCase.priority}</span>
+          {/* AI Suggestion */}
+          <div className="flex items-center justify-between p-2 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-purple-500" />
+              <span className="text-xs font-medium text-purple-700">AI Suggestion</span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleAISuggestion}
+              className="text-xs h-6 px-2 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+            >
+              Improve with AI
+            </Button>
+          </div>
+
+          {/* Enhanced Steps Preview */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-gray-700">
+                  {testCase.steps.length} steps
+                </span>
+                <Badge
+                  variant="outline"
+                  className={priorityConfig[testCase.priority]}
+                >
+                  {testCase.priority}
+                </Badge>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowStepsPreview(!showStepsPreview)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      {showStepsPreview ? (
+                        <>
+                          <ChevronUp className="w-3 h-3 mr-1" />
+                          Hide
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-3 h-3 mr-1" />
+                          Preview
+                        </>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{showStepsPreview ? "Hide test steps" : "Preview test steps"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+
+            {/* Steps Preview (Collapsible) */}
+            {showStepsPreview && (
+              <div className="p-3 bg-gray-50 rounded-md border border-gray-200 max-h-32 overflow-y-auto">
+                {testCase.steps.slice(0, 5).map((step, index) => (
+                  <div key={index} className="flex items-start space-x-2 mb-2 last:mb-0">
+                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">
+                      {index + 1}
+                    </span>
+                    <span className="text-xs text-gray-700 leading-relaxed">
+                      {step.description || step.action || `Step ${index + 1}`}
+                    </span>
+                  </div>
+                ))}
+                {testCase.steps.length > 5 && (
+                  <div className="text-xs text-gray-500 text-center mt-2">
+                    +{testCase.steps.length - 5} more steps...
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </CardContent>
@@ -381,7 +521,8 @@ export default function TestCaseManager() {
   }
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -700,6 +841,7 @@ export default function TestCaseManager() {
           </Button>
         </div>
       )}
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

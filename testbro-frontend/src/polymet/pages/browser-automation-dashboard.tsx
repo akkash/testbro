@@ -406,38 +406,7 @@ export default function BrowserAutomationDashboard() {
               className="w-full"
             />
             
-            {/* Additional Info Card */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                  <span>Browser Control Features</span>
-                </CardTitle>
-                <CardDescription>
-                  Comprehensive browser session management and control
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div className="space-y-1">
-                    <div className="font-medium">Session Management</div>
-                    <div className="text-gray-600">Create, monitor, and control browser sessions</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="font-medium">Multi-Browser Support</div>
-                    <div className="text-gray-600">Chrome, Firefox, Safari, Edge</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="font-medium">Real-time Control</div>
-                    <div className="text-gray-600">Navigate, click, type, scroll in real-time</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="font-medium">WebSocket Integration</div>
-                    <div className="text-gray-600">Live updates and instant feedback</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+
           </TabsContent>
 
           {/* Test Recording Interface */}

@@ -10,6 +10,11 @@ import {
   XCircle,
   Loader2,
   Trash2,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  Eye,
+  Globe,
 } from "lucide-react";
 import {
   Card,
@@ -38,7 +43,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Tooltip,
+  TooltipContent,
   TooltipProvider,
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
 
 interface BrowserSession {
@@ -53,6 +61,10 @@ interface BrowserSession {
   created_at: string;
   last_activity: string;
   recording_session_id?: string;
+  // Enhanced properties for better UX
+  projectName?: string;
+  testName?: string;
+  thumbnailUrl?: string;
 }
 
 interface BrowserControlDashboardProps {
@@ -67,6 +79,7 @@ export default function BrowserControlDashboard({
   const [activeSessions, setActiveSessions] = useState<BrowserSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
+  const [helpExpanded, setHelpExpanded] = useState(false);
   const [newSessionData, setNewSessionData] = useState({
     projectId: "",
     targetId: "",
@@ -99,6 +112,10 @@ export default function BrowserControlDashboard({
           user_id: "user-1",
           created_at: new Date().toISOString(),
           last_activity: new Date().toISOString(),
+          // Enhanced data for better UX
+          projectName: "E-commerce Site",
+          testName: "User Login Flow",
+          thumbnailUrl: "/thumbnails/session-1-preview.png",
         },
         {
           id: "session-2",
@@ -112,6 +129,10 @@ export default function BrowserControlDashboard({
           created_at: new Date().toISOString(),
           last_activity: new Date().toISOString(),
           recording_session_id: "recording-1",
+          // Enhanced data for better UX
+          projectName: "Marketing Dashboard",
+          testName: "Analytics Report Generation",
+          thumbnailUrl: "/thumbnails/session-2-preview.png",
         },
       ]);
 
@@ -186,33 +207,137 @@ export default function BrowserControlDashboard({
     switch (status) {
       case "active":
         return (
-          <Badge variant="default" className="bg-green-100 text-green-800">
-            <Activity className="w-3 h-3 mr-1" />
+          <Badge variant="default" className="bg-green-100 text-green-800 text-sm px-3 py-1">
+            <Activity className="w-4 h-4 mr-1" />
             Active
           </Badge>
         );
       case "recording":
         return (
-          <Badge variant="destructive" className="animate-pulse">
-            <Zap className="w-3 h-3 mr-1" />
+          <Badge variant="destructive" className="animate-pulse text-sm px-3 py-1">
+            <Zap className="w-4 h-4 mr-1" />
             Recording
           </Badge>
         );
       case "paused":
         return (
-          <Badge variant="secondary">
-            <Pause className="w-3 h-3 mr-1" />
+          <Badge variant="secondary" className="text-sm px-3 py-1">
+            <Pause className="w-4 h-4 mr-1" />
             Paused
           </Badge>
         );
       default:
         return (
-          <Badge variant="outline">
-            <XCircle className="w-3 h-3 mr-1" />
+          <Badge variant="outline" className="text-sm px-3 py-1">
+            <XCircle className="w-4 h-4 mr-1" />
             Closed
           </Badge>
         );
     }
+  };
+
+  const InteractiveFeatureHelp = () => {
+    const features = [
+      {
+        title: "Session Management",
+        description: "Create, monitor, and control browser sessions with real-time updates",
+        icon: Monitor,
+        details: [
+          "Launch new browser instances",
+          "Monitor active sessions",
+          "Control session lifecycle",
+          "View session statistics"
+        ]
+      },
+      {
+        title: "Multi-Browser Support",
+        description: "Test across different browsers: Chrome, Firefox, Safari, Edge",
+        icon: Globe,
+        details: [
+          "Cross-browser compatibility",
+          "Browser-specific testing",
+          "Mobile emulation",
+          "Device simulation"
+        ]
+      },
+      {
+        title: "Real-time Control",
+        description: "Navigate, click, type, scroll in real-time from your dashboard",
+        icon: Activity,
+        details: [
+          "Live browser interaction",
+          "Element inspection",
+          "Screenshot capture",
+          "Performance monitoring"
+        ]
+      },
+      {
+        title: "WebSocket Integration",
+        description: "Instant feedback and live updates through WebSocket connections",
+        icon: Zap,
+        details: [
+          "Real-time status updates",
+          "Live session monitoring",
+          "Instant command execution",
+          "Event-driven notifications"
+        ]
+      }
+    ];
+
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center space-x-2">
+                <HelpCircle className="w-5 h-5 text-blue-600" />
+                <span>Browser Control Features</span>
+              </CardTitle>
+              <CardDescription>
+                Comprehensive browser session management and control
+              </CardDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setHelpExpanded(!helpExpanded)}
+            >
+              {helpExpanded ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </Button>
+          </div>
+        </CardHeader>
+        {helpExpanded && (
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {features.map((feature, index) => {
+                const Icon = feature.icon;
+                return (
+                  <div key={index} className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Icon className="w-4 h-4 text-blue-600" />
+                      <h4 className="font-medium text-sm">{feature.title}</h4>
+                    </div>
+                    <p className="text-xs text-gray-600">{feature.description}</p>
+                    <ul className="text-xs text-gray-500 space-y-1 ml-4">
+                      {feature.details.map((detail, detailIndex) => (
+                        <li key={detailIndex} className="flex items-center">
+                          <div className="w-1 h-1 bg-gray-400 rounded-full mr-2" />
+                          {detail}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        )}
+      </Card>
+    );
   };
 
   if (isLoading) {
@@ -307,6 +432,9 @@ export default function BrowserControlDashboard({
           </Card>
         </div>
 
+        {/* Interactive Feature Help */}
+        <InteractiveFeatureHelp />
+
         {/* Active Sessions */}
         <Card>
           <CardHeader>
@@ -320,23 +448,79 @@ export default function BrowserControlDashboard({
               {activeSessions.map((session) => (
                 <div
                   key={session.id}
-                  className="flex items-center justify-between p-4 border rounded-lg"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-center space-x-4">
+                    {/* Mini Preview Thumbnail */}
+                    <div className="w-16 h-12 bg-gradient-to-br from-blue-50 to-indigo-100 rounded border overflow-hidden flex-shrink-0 relative">
+                      {session.thumbnailUrl ? (
+                        <img
+                          src={session.thumbnailUrl}
+                          alt="Session preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const icon = document.createElement('div');
+                              icon.className = 'w-full h-full flex items-center justify-center text-gray-400';
+                              icon.innerHTML = '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7v10c0 5.55 3.84 9.74 9 11 5.16-1.26 9-5.45 9-11V7l-10-5z"/></svg>';
+                              parent.appendChild(icon);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          <div className="text-center">
+                            <Monitor className="w-6 h-6 mx-auto mb-1" />
+                            <div className="text-xs">Live</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Status indicator overlay */}
+                      {session.status === 'recording' && (
+                        <div className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                      )}
+                    </div>
+
+                    {/* Browser Icon */}
                     {getBrowserIcon(session.browser_type)}
-                    <div>
-                      <p className="font-medium">{session.id}</p>
-                      <p className="text-sm text-muted-foreground">
+
+                    {/* Session Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <p className="font-medium text-gray-900">
+                          {session.projectName || session.id}
+                        </p>
+                        <span className="text-gray-400">•</span>
+                        <p className="text-sm text-blue-600 truncate">
+                          {session.testName || "Test Session"}
+                        </p>
+                      </div>
+                      <p className="text-sm text-gray-500 truncate">
                         {session.url}
                       </p>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <Badge variant="outline" className="text-xs">
+                          {session.viewport.width}×{session.viewport.height}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {session.browser_type}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
+
+                  {/* Status and Actions */}
+                  <div className="flex items-center space-x-3">
                     {getStatusBadge(session.status)}
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => closeSession(session.id)}
+                      className="hover:bg-red-50 hover:border-red-200"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
