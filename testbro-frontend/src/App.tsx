@@ -5,6 +5,7 @@ import {
   Navigate,
 } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { OrganizationProvider } from "@/contexts/OrganizationContext";
 import ProtectedRoute from "@/polymet/components/ProtectedRoute";
 import TestBroLayout from "@/polymet/layouts/testbro-layout";
 import HomepageLayout from "@/polymet/layouts/homepage-layout";
@@ -35,7 +36,8 @@ export default function TestBroApp() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Router>
+        <OrganizationProvider>
+          <Router>
         <Routes>
           {/* Authentication routes - Public */}
           <Route path="/login" element={<Login />} />
@@ -254,9 +256,10 @@ export default function TestBroApp() {
 
           {/* Catch all route */}
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+          </Routes>
+          </Router>
+        </OrganizationProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }
