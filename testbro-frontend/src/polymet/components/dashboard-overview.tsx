@@ -21,7 +21,9 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
-
+  Calendar,
+  TrendingDown as TrendDown,
+  DollarSign,
   Flame,
 } from "lucide-react";
 import BrowserAutomationPlayer from "@/polymet/components/browser-automation-player";
@@ -242,6 +244,9 @@ export default function DashboardOverview() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [browserAutomationExpanded, setBrowserAutomationExpanded] = useState(false);
+  const [trendsPeriod, setTrendsPeriod] = useState<'7d' | '30d'>('7d');
+  const [topFailingTests, setTopFailingTests] = useState<any[]>([]);
+  const [roiMetrics, setRoiMetrics] = useState<any>(null);
 
   // WebSocket for real-time updates
   const { connectionState, addEventListener, removeEventListener } = useWebSocket();
@@ -262,13 +267,17 @@ export default function DashboardOverview() {
         { data: activityData },
         { data: executionsData },
         { data: projectsData },
-        { data: trendsData }
+        { data: trendsData },
+        { data: failingTestsData },
+        { data: roiData }
       ] = await Promise.all([
         DashboardService.getMetrics().catch(() => ({ data: null, error: 'Failed to load metrics' })),
         DashboardService.getRecentActivity(10).catch(() => ({ data: null, error: 'Failed to load activity' })),
         ExecutionService.listExecutions({ limit: 5, sort_by: 'started_at', sort_order: 'desc' }).catch(() => ({ data: null, error: 'Failed to load executions' })),
         ProjectService.listProjects({ limit: 5, sort_by: 'updated_at', sort_order: 'desc' }).catch(() => ({ data: null, error: 'Failed to load projects' })),
-        DashboardService.getTrends('30d').catch(() => ({ data: null, error: 'Failed to load trends' }))
+        DashboardService.getTrends(trendsPeriod).catch(() => ({ data: null, error: 'Failed to load trends' })),
+        DashboardService.getTopFailingTests(5).catch(() => ({ data: null, error: 'Failed to load failing tests' })),
+        DashboardService.getROIMetrics().catch(() => ({ data: null, error: 'Failed to load ROI metrics' }))
       ]);
 
       // Handle metrics with fallback
@@ -328,6 +337,45 @@ export default function DashboardOverview() {
         { date: "2024-01-24", passed: 11, failed: 2, avgDuration: 3.3, uxScore: 86 }
       ]);
 
+      // Set top failing tests with fallback data
+      setTopFailingTests(failingTestsData || [
+        {
+          testName: "Payment Gateway Integration",
+          failureRate: 23.5,
+          lastFailure: "2024-01-24T10:30:00Z",
+          environment: "production",
+          errorType: "timeout",
+          businessImpact: "High - affects checkout conversion"
+        },
+        {
+          testName: "User Registration Flow",
+          failureRate: 18.2,
+          lastFailure: "2024-01-24T08:15:00Z",
+          environment: "staging",
+          errorType: "element_not_found",
+          businessImpact: "Medium - affects user onboarding"
+        },
+        {
+          testName: "Product Search Functionality",
+          failureRate: 15.7,
+          lastFailure: "2024-01-23T16:45:00Z",
+          environment: "production",
+          errorType: "api_error",
+          businessImpact: "Medium - affects user experience"
+        }
+      ]);
+
+      // Set ROI metrics with fallback data
+      setRoiMetrics(roiData || {
+        totalSavings: 24650,
+        monthlySavings: 8200,
+        timesSaved: 156,
+        costPerManualTest: 45,
+        automatedTestCost: 2.5,
+        risksPrevented: 7,
+        productionIssuesAvoided: 12
+      });
+
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
@@ -346,7 +394,20 @@ export default function DashboardOverview() {
       // but handle it gracefully
       setLoading(false);
     }
-  }, [authLoading, user]);
+  }, [authLoading, user, trendsPeriod]);
+
+  // Reload trends when period changes
+  const handleTrendsPeriodChange = async (period: '7d' | '30d') => {
+    setTrendsPeriod(period);
+    try {
+      const { data: trendsData } = await DashboardService.getTrends(period);
+      if (trendsData) {
+        setTrends(trendsData);
+      }
+    } catch (err) {
+      console.error('Failed to load trends for period:', period, err);
+    }
+  };
 
   // Real-time updates via WebSocket
   useEffect(() => {
@@ -511,6 +572,28 @@ export default function DashboardOverview() {
           description="AI-powered analysis"
         />
 
+        {/* ROI Metrics Card */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              ROI This Month
+            </CardTitle>
+            <DollarSign className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              ${roiMetrics?.monthlySavings?.toLocaleString() || '8,200'}
+            </div>
+            <div className="flex items-center text-xs text-green-600 mt-1">
+              <TrendingUp className="h-3 w-3 mr-1" />
+              vs ${roiMetrics?.costPerManualTest * roiMetrics?.timesSaved || '7,020'} manual cost
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {roiMetrics?.timesSaved || 156} tests automated
+            </p>
+          </CardContent>
+        </Card>
+
         {/* AI Insights Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -537,15 +620,39 @@ export default function DashboardOverview() {
         </Card>
       </div>
 
-      {/* Charts Section */}
+      {/* Charts and Top Failing Tests Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* UX Score Trends Chart */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>UX Quality Score Trends</CardTitle>
-            <CardDescription>
-              AI-powered UX analysis trends over time
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>UX Quality Score Trends</CardTitle>
+                <CardDescription>
+                  AI-powered UX analysis trends over time
+                </CardDescription>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant={trendsPeriod === '7d' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleTrendsPeriodChange('7d')}
+                  className="text-xs"
+                >
+                  <Calendar className="w-3 h-3 mr-1" />
+                  7 Days
+                </Button>
+                <Button
+                  variant={trendsPeriod === '30d' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleTrendsPeriodChange('30d')}
+                  className="text-xs"
+                >
+                  <Calendar className="w-3 h-3 mr-1" />
+                  30 Days
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="aspect-[none] h-64">
@@ -580,16 +687,137 @@ export default function DashboardOverview() {
           </CardContent>
         </Card>
 
-        {/* Critical Issues Feed */}
+        {/* Top Failing Tests Widget */}
         <Card>
           <CardHeader>
-            <CardTitle>Critical Issues</CardTitle>
-            <CardDescription>Actionable AI-detected problems</CardDescription>
+            <CardTitle className="flex items-center space-x-2">
+              <TrendDown className="w-4 h-4 text-red-500" />
+              <span>Top Failing Tests</span>
+            </CardTitle>
+            <CardDescription>Focus areas for quick wins</CardDescription>
           </CardHeader>
           <CardContent>
-            <CriticalIssuesFeed issues={metrics?.topIssues || []} />
+            {topFailingTests.length > 0 ? (
+              <div className="space-y-3">
+                {topFailingTests.map((test, index) => (
+                  <div key={index} className="border border-red-200 bg-red-50 rounded-lg p-3">
+                    <div className="flex items-start justify-between mb-2">
+                      <h4 className="text-sm font-medium text-red-900 flex-1">
+                        {test.testName}
+                      </h4>
+                      <Badge variant="destructive" className="text-xs ml-2">
+                        {test.failureRate}% fail
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-xs mb-2">
+                      <span className="text-red-700">
+                        Last: {new Date(test.lastFailure).toLocaleDateString()}
+                      </span>
+                      <Badge variant="outline" className="text-xs">
+                        {test.environment}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-red-600 mb-2">
+                      Error: {test.errorType.replace('_', ' ')}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-red-600">
+                        {test.businessImpact}
+                      </span>
+                      <Button size="sm" variant="outline" className="h-6 text-xs">
+                        Fix Now
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                <Button variant="outline" size="sm" className="w-full mt-3" asChild>
+                  <Link to="/analytics">
+                    View All Failing Tests
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-32 text-center">
+                <CheckCircle className="w-8 h-8 text-green-500 mb-2" />
+                <h4 className="text-sm font-medium text-gray-900 mb-1">All Tests Passing!</h4>
+                <p className="text-xs text-gray-500">No failing tests detected</p>
+              </div>
+            )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* ROI Insights Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <DollarSign className="w-5 h-5 text-green-600" />
+            <span>Automation ROI Insights</span>
+          </CardTitle>
+          <CardDescription>
+            Financial impact and savings from automated testing
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="text-2xl font-bold text-green-600">
+                ${roiMetrics?.totalSavings?.toLocaleString() || '24,650'}
+              </div>
+              <p className="text-sm text-green-700 font-medium">Total Savings</p>
+              <p className="text-xs text-green-600">Since automation started</p>
+            </div>
+            
+            <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="text-2xl font-bold text-blue-600">
+                {roiMetrics?.timesSaved || 156}
+              </div>
+              <p className="text-sm text-blue-700 font-medium">Tests Automated</p>
+              <p className="text-xs text-blue-600">This month</p>
+            </div>
+            
+            <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
+              <div className="text-2xl font-bold text-purple-600">
+                ${roiMetrics?.automatedTestCost || '2.50'}
+              </div>
+              <p className="text-sm text-purple-700 font-medium">Cost Per Test</p>
+              <p className="text-xs text-purple-600">vs ${roiMetrics?.costPerManualTest || 45} manual</p>
+            </div>
+            
+            <div className="text-center p-4 bg-orange-50 rounded-lg border border-orange-200">
+              <div className="text-2xl font-bold text-orange-600">
+                {roiMetrics?.productionIssuesAvoided || 12}
+              </div>
+              <p className="text-sm text-orange-700 font-medium">Issues Prevented</p>
+              <p className="text-xs text-orange-600">In production</p>
+            </div>
+          </div>
+          
+          <div className="mt-4 p-3 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+            <div className="flex items-center space-x-2 mb-2">
+              <DollarSign className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium text-green-900">
+                ROI Calculation
+              </span>
+            </div>
+            <p className="text-xs text-green-800">
+              By automating {roiMetrics?.timesSaved || 156} tests, you've saved 
+              <strong>${roiMetrics?.monthlySavings?.toLocaleString() || '8,200'}</strong> this month. 
+              That's a <strong>{((roiMetrics?.costPerManualTest - roiMetrics?.automatedTestCost) / roiMetrics?.costPerManualTest * 100)?.toFixed(0) || '94'}% cost reduction</strong> per test.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Critical Issues Feed */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Critical Issues</CardTitle>
+          <CardDescription>Actionable AI-detected problems</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CriticalIssuesFeed issues={metrics?.topIssues || []} />
+        </CardContent>
       </div>
 
       {/* Browser Automation Highlights */}

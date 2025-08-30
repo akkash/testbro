@@ -1,37 +1,161 @@
 import React, { useState, useEffect } from "react";
 import {
   Play,
-  Upload,
-  FileText,
   Clock,
   Activity,
   CheckCircle,
-  AlertCircle,
   Zap,
-  Eye,
-  MousePointer,
-  Keyboard,
-  Scroll,
-  Timer,
-  Brain,
   Video,
   Monitor,
   PlayCircle,
-  Sparkles,
-  Lightbulb,
-  MessageSquare,
-  Wand2,
-  ChevronRight,
   RefreshCw,
+  TrendingUp,
 } from "lucide-react";
+
+// Custom icon components for missing icons
+const Upload = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+  </svg>
+);
+
+const FileText = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+
+const AlertCircle = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const Eye = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+  </svg>
+);
+
+const MousePointer = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16l4.586-4.586a2 2 0 012.828 0L19 19V4a1 1 0 00-1-1H8a1 1 0 00-1 1z" />
+  </svg>
+);
+
+const Keyboard = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+  </svg>
+);
+
+const Scroll = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+  </svg>
+);
+
+const Timer = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const Brain = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+  </svg>
+);
+
+const Sparkles = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l1.5 1.5L5 6 3.5 4.5 5 3zm0 0L3 1m2 2l2-2m6 7l1.5 1.5L15 12l-1.5-1.5L15 9zm0 0L13 7m2 2l2-2m-7 7l1.5 1.5L12 21l-1.5-1.5L12 18zm0 0L10 16m2 2l2-2" />
+  </svg>
+);
+
+const Lightbulb = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+  </svg>
+);
+
+const MessageSquare = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+  </svg>
+);
+
+const Wand2 = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.929 4.929l1.414 1.414M7.05 11.293l1.414-1.414m2.829-2.828l1.414 1.414M15 9l6 6-6 6-6-6 6-6zM9 3l1 1-1 1-1-1 1-1z" />
+  </svg>
+);
+
+const ChevronRight = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+);
+
+const History = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const MoreHorizontal = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="1"/>
+    <circle cx="19" cy="12" r="1"/>
+    <circle cx="5" cy="12" r="1"/>
+  </svg>
+);
+
+const Trash2 = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const Star = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+  </svg>
+);
+
+const Calendar = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>
+);
+
+const Filter = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+  </svg>
+);
 import BrowserAutomationPlayer from "@/polymet/components/browser-automation-player";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface SimulationStep {
   id: string;
@@ -50,6 +174,27 @@ interface SimulationMetrics {
   keyboardNavigation: number;
   errorEncounters: number;
   taskCompletionTime: number;
+}
+
+interface PastSimulation {
+  id: string;
+  name: string;
+  description: string;
+  flow: string;
+  createdAt: string;
+  duration: number;
+  status: "completed" | "failed" | "cancelled";
+  metrics: {
+    pageLoadTime: number;
+    rageClicks: number;
+    scrollDepth: number;
+    uxScore: number;
+  };
+  stepsCount: number;
+  tags: string[];
+  isFavorite: boolean;
+  thumbnailUrl?: string;
+  videoUrl?: string;
 }
 
 interface BrowserAutomationData {
@@ -82,6 +227,117 @@ export default function AISimulationRunner() {
   const [aiPreviewSteps, setAiPreviewSteps] = useState<any[]>([]);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [inputMode, setInputMode] = useState<"natural" | "technical">("natural");
+  const [pastSimulations, setPastSimulations] = useState<PastSimulation[]>([]);
+  const [showPastSimulations, setShowPastSimulations] = useState(true);
+  const [simulationFilter, setSimulationFilter] = useState<"all" | "favorites" | "recent">("all");
+
+  // Mock past simulations data
+  const mockPastSimulations: PastSimulation[] = [
+    {
+      id: "sim_1",
+      name: "Login Flow Analysis",
+      description: "User authentication with email/password",
+      flow: "login",
+      createdAt: "2024-01-15T10:30:00Z",
+      duration: 15300,
+      status: "completed",
+      metrics: {
+        pageLoadTime: 1200,
+        rageClicks: 2,
+        scrollDepth: 45,
+        uxScore: 87
+      },
+      stepsCount: 7,
+      tags: ["authentication", "ui-test"],
+      isFavorite: true,
+      thumbnailUrl: "/thumbnails/login-simulation.jpg",
+      videoUrl: "/videos/login-simulation.mp4"
+    },
+    {
+      id: "sim_2",
+      name: "E-commerce Checkout",
+      description: "Complete purchase flow with payment processing",
+      flow: "checkout",
+      createdAt: "2024-01-14T16:45:00Z",
+      duration: 28500,
+      status: "completed",
+      metrics: {
+        pageLoadTime: 1800,
+        rageClicks: 0,
+        scrollDepth: 78,
+        uxScore: 92
+      },
+      stepsCount: 12,
+      tags: ["e-commerce", "payment", "conversion"],
+      isFavorite: false,
+      thumbnailUrl: "/thumbnails/checkout-simulation.jpg",
+      videoUrl: "/videos/checkout-simulation.mp4"
+    },
+    {
+      id: "sim_3",
+      name: "Search & Filter",
+      description: "Product search with multiple filters applied",
+      flow: "search",
+      createdAt: "2024-01-13T09:15:00Z",
+      duration: 19200,
+      status: "completed",
+      metrics: {
+        pageLoadTime: 950,
+        rageClicks: 1,
+        scrollDepth: 62,
+        uxScore: 89
+      },
+      stepsCount: 9,
+      tags: ["search", "filters", "product-discovery"],
+      isFavorite: true,
+      thumbnailUrl: "/thumbnails/search-simulation.jpg",
+      videoUrl: "/videos/search-simulation.mp4"
+    },
+    {
+      id: "sim_4",
+      name: "User Registration",
+      description: "New account creation with email verification",
+      flow: "registration",
+      createdAt: "2024-01-12T14:20:00Z",
+      duration: 22800,
+      status: "failed",
+      metrics: {
+        pageLoadTime: 2100,
+        rageClicks: 4,
+        scrollDepth: 35,
+        uxScore: 68
+      },
+      stepsCount: 8,
+      tags: ["onboarding", "registration", "email-verification"],
+      isFavorite: false,
+      thumbnailUrl: "/thumbnails/registration-simulation.jpg"
+    },
+    {
+      id: "sim_5",
+      name: "Mobile Navigation",
+      description: "Mobile-first navigation and menu interaction",
+      flow: "mobile",
+      createdAt: "2024-01-11T11:30:00Z",
+      duration: 12600,
+      status: "completed",
+      metrics: {
+        pageLoadTime: 1400,
+        rageClicks: 0,
+        scrollDepth: 55,
+        uxScore: 91
+      },
+      stepsCount: 6,
+      tags: ["mobile", "navigation", "responsive"],
+      isFavorite: false,
+      thumbnailUrl: "/thumbnails/mobile-simulation.jpg",
+      videoUrl: "/videos/mobile-simulation.mp4"
+    }
+  ];
+
+  // Initialize past simulations
+  useEffect(() => {
+    setPastSimulations(mockPastSimulations);
+  }, []);
 
   const mockSimulationSteps: SimulationStep[] = [
     {
@@ -183,14 +439,14 @@ export default function AISimulationRunner() {
 
     // Simulate the AI running through test steps
     for (let i = 0; i < mockSimulationSteps.length; i++) {
-      const step = { ...mockSimulationSteps[i], status: "running" as const };
+      const step: SimulationStep = { ...mockSimulationSteps[i], status: "running" };
       setCurrentStep(step);
 
       // Simulate step execution time
       await new Promise((resolve) => setTimeout(resolve, step.duration));
 
-      step.status = "completed";
-      setSimulationSteps((prev) => [...prev, step]);
+      const completedStep: SimulationStep = { ...step, status: "completed" };
+      setSimulationSteps((prev) => [...prev, completedStep]);
       setSimulationProgress(((i + 1) / mockSimulationSteps.length) * 100);
     }
 
@@ -332,6 +588,93 @@ export default function AISimulationRunner() {
     }
   }, [naturalLanguageInput]);
 
+  // Helper functions for past simulations
+  const filteredSimulations = pastSimulations.filter(sim => {
+    switch (simulationFilter) {
+      case "favorites":
+        return sim.isFavorite;
+      case "recent":
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        return new Date(sim.createdAt) > sevenDaysAgo;
+      default:
+        return true;
+    }
+  });
+
+  const handleReplaySimulation = (simulation: PastSimulation) => {
+    // Load the simulation data and replay it
+    setNaturalLanguageInput(simulation.description);
+    setInputMode("natural");
+    
+    // Simulate loading the previous simulation
+    if (simulation.videoUrl) {
+      setBrowserAutomation({
+        videoUrl: simulation.videoUrl,
+        thumbnailUrl: simulation.thumbnailUrl || "/thumbnails/default-sim.jpg",
+        duration: simulation.duration,
+        recordingStartTime: simulation.createdAt,
+        recordingEndTime: new Date(new Date(simulation.createdAt).getTime() + simulation.duration).toISOString(),
+        playbackControls: {
+          canPlay: true,
+          canPause: true,
+          canSeek: true,
+          availableSpeeds: [0.5, 1, 1.5, 2],
+        },
+      });
+      setShowBrowserView(true);
+      setShowResults(true);
+    }
+    
+    console.log('Replaying simulation:', simulation.name);
+  };
+
+  const handleToggleFavorite = (simulationId: string) => {
+    setPastSimulations(prev => 
+      prev.map(sim => 
+        sim.id === simulationId 
+          ? { ...sim, isFavorite: !sim.isFavorite }
+          : sim
+      )
+    );
+  };
+
+  const handleDeleteSimulation = (simulationId: string) => {
+    if (confirm('Are you sure you want to delete this simulation?')) {
+      setPastSimulations(prev => prev.filter(sim => sim.id !== simulationId));
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-100 text-green-800";
+      case "failed":
+        return "bg-red-100 text-red-800";
+      case "cancelled":
+        return "bg-gray-100 text-gray-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const formatDuration = (ms: number) => {
+    const minutes = Math.floor(ms / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return `${minutes}m ${seconds}s`;
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffInDays === 0) return "Today";
+    if (diffInDays === 1) return "Yesterday";
+    if (diffInDays < 7) return `${diffInDays} days ago`;
+    
+    return date.toLocaleDateString();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -359,6 +702,177 @@ export default function AISimulationRunner() {
           </Badge>
         </div>
       </div>
+
+      {/* Replay Past Simulations Section */}
+      {showPastSimulations && pastSimulations.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <History className="w-5 h-5 text-indigo-600" />
+                <CardTitle>Replay Past Simulations</CardTitle>
+                <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
+                  {filteredSimulations.length} available
+                </Badge>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Select value={simulationFilter} onValueChange={(value: any) => setSimulationFilter(value)}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="recent">Recent</SelectItem>
+                    <SelectItem value="favorites">Favorites</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowPastSimulations(false)}
+                >
+                  Hide
+                </Button>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600">
+              Replay previous AI simulations to compare results and iterate on user flows
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredSimulations.map((simulation) => (
+                <Card key={simulation.id} className="hover:shadow-md transition-all duration-200 border-l-4 border-l-indigo-500">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <h4 className="font-medium text-gray-900 text-sm">{simulation.name}</h4>
+                          {simulation.isFavorite && (
+                            <Star className="w-3 h-3 text-yellow-500 fill-current" />
+                          )}
+                        </div>
+                        <Badge className={`text-xs ${getStatusColor(simulation.status)}`}>
+                          {simulation.status}
+                        </Badge>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                            <MoreHorizontal className="w-3 h-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleToggleFavorite(simulation.id)}>
+                            <Star className={`w-3 h-3 mr-2 ${simulation.isFavorite ? 'fill-current text-yellow-500' : ''}`} />
+                            {simulation.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDeleteSimulation(simulation.id)} className="text-red-600">
+                            <Trash2 className="w-3 h-3 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    
+                    <p className="text-xs text-gray-600 mb-3 line-clamp-2">{simulation.description}</p>
+                    
+                    <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                      <div className="bg-blue-50 p-2 rounded">
+                        <div className="font-medium text-blue-900">UX Score</div>
+                        <div className="text-blue-700">{simulation.metrics.uxScore}/100</div>
+                      </div>
+                      <div className="bg-green-50 p-2 rounded">
+                        <div className="font-medium text-green-900">Duration</div>
+                        <div className="text-green-700">{formatDuration(simulation.duration)}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+                      <span>{simulation.stepsCount} steps</span>
+                      <span>{formatDate(simulation.createdAt)}</span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {simulation.tags.slice(0, 2).map((tag) => (
+                        <Badge key={tag} variant="outline" className="text-xs px-1 py-0">
+                          {tag}
+                        </Badge>
+                      ))}
+                      {simulation.tags.length > 2 && (
+                        <Badge variant="outline" className="text-xs px-1 py-0">
+                          +{simulation.tags.length - 2}
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    <Button
+                      onClick={() => handleReplaySimulation(simulation)}
+                      size="sm"
+                      className="w-full bg-indigo-600 hover:bg-indigo-700"
+                      disabled={!simulation.videoUrl && simulation.status !== 'completed'}
+                    >
+                      <PlayCircle className="w-3 h-3 mr-2" />
+                      {simulation.videoUrl ? 'Replay Simulation' : 'View Results'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            
+            {filteredSimulations.length === 0 && (
+              <div className="text-center py-8">
+                <History className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <h3 className="text-sm font-medium text-gray-900 mb-2">
+                  {simulationFilter === 'favorites' ? 'No Favorite Simulations' : 
+                   simulationFilter === 'recent' ? 'No Recent Simulations' : 'No Simulations Found'}
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  {simulationFilter === 'favorites' ? 'Mark simulations as favorites to see them here' :
+                   simulationFilter === 'recent' ? 'Run some simulations to see recent activity' :
+                   'Try adjusting your filter or create your first simulation'}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSimulationFilter('all')}
+                >
+                  Show All Simulations
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      
+      {/* Show Past Simulations Button (when hidden) */}
+      {!showPastSimulations && pastSimulations.length > 0 && (
+        <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <History className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-indigo-900">Past Simulations Available</h3>
+                  <p className="text-sm text-indigo-700">
+                    You have {pastSimulations.length} previous simulations ready to replay
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={() => setShowPastSimulations(true)}
+                size="sm"
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
+                <PlayCircle className="w-4 h-4 mr-2" />
+                View Simulations
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         {/* Natural Language Input */}

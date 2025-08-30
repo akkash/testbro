@@ -615,17 +615,18 @@ class WebSocketService {
    */
   private async getAuthToken(): Promise<string | null> {
     try {
-      // Try to get token from localStorage
+      // Import supabase here to avoid circular dependencies
+      const { supabase } = await import('../supabase');
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        return session.access_token;
+      }
+
+      // Fallback: try to get token from localStorage
       const authData = localStorage.getItem('sb-auth-token');
       if (authData) {
         const parsed = JSON.parse(authData);
-        return parsed.access_token;
-      }
-
-      // Alternative: get from supabase session
-      const session = localStorage.getItem('sb-session');
-      if (session) {
-        const parsed = JSON.parse(session);
         return parsed.access_token;
       }
 
@@ -641,7 +642,7 @@ class WebSocketService {
    */
   private getWebSocketUrl(): string {
     // Use environment variable or default to development URL
-    const baseUrl = process.env.VITE_WEBSOCKET_URL || 'http://localhost:3001';
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
     return baseUrl;
   }
 }

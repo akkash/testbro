@@ -23,6 +23,9 @@ import {
   Zap,
   TrendingDown,
   Clock,
+  Folder,
+  ArrowRight,
+  BookOpen,
 } from "lucide-react";
 import ProjectCreationDialog from "@/polymet/components/project-creation-dialog";
 import { Button } from "@/components/ui/button";
@@ -273,17 +276,32 @@ export default function ProjectManager() {
 
       try {
         setLoading(true);
+        setError(null); // Clear any previous errors
         const { data, error: projectError } = await ProjectService.listProjects();
         if (projectError) {
-          setError(projectError);
-          console.error('Failed to load projects:', projectError);
+          // Check if it's a "no projects" case vs actual error
+          if (projectError.includes('404') || projectError.includes('Not Found') || projectError.includes('No projects found')) {
+            // This is likely an empty state, not an error
+            setProjects([]);
+            setError(null);
+          } else {
+            setError(projectError);
+            console.error('Failed to load projects:', projectError);
+          }
         } else {
           setProjects(data || []);
         }
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
-        setError(errorMessage);
-        console.error('Error loading projects:', err);
+        // Only set error for actual network/server errors
+        if (err instanceof Error && err.message.includes('fetch')) {
+          const errorMessage = 'Unable to connect to server. Please check your connection and try again.';
+          setError(errorMessage);
+          console.error('Network error loading projects:', err);
+        } else {
+          // For other errors, treat as empty state
+          setProjects([]);
+          setError(null);
+        }
       } finally {
         setLoading(false);
       }
@@ -528,6 +546,119 @@ export default function ProjectManager() {
           <ProjectCard key={project.id} project={project} />
         ))}
       </div>
+
+      {/* Empty State and Onboarding */}
+      {filteredProjects.length === 0 && !error && (
+        <div className="text-center py-16">
+          {projects.length === 0 && !searchTerm && statusFilter === "all" ? (
+            // True empty state - no projects exist
+            <div className="max-w-md mx-auto">
+              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Folder className="w-10 h-10 text-blue-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-3">
+                You don't have projects yet
+              </h3>
+              <p className="text-gray-600 mb-8 leading-relaxed">
+                Create your first project to group tests & targets. Projects help you organize your testing workflow and collaborate with your team.
+              </p>
+              
+              <div className="space-y-4">
+                <Button 
+                  size="lg" 
+                  onClick={() => setIsCreateDialogOpen(true)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Plus className="w-5 h-5 mr-2" />
+                  Create Your First Project
+                </Button>
+                
+                {/* Onboarding Steps */}
+                <div className="mt-8 p-6 bg-gray-50 rounded-lg border">
+                  <h4 className="text-sm font-medium text-gray-900 mb-4">What you can do with projects:</h4>
+                  <div className="space-y-3 text-sm text-gray-600">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center mt-0.5">
+                        <span className="text-xs font-medium text-blue-600">1</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Organize test targets</span>
+                        <p className="text-xs text-gray-500 mt-1">Group related websites, apps, and APIs for testing</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <div className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center mt-0.5">
+                        <span className="text-xs font-medium text-green-600">2</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Create test cases</span>
+                        <p className="text-xs text-gray-500 mt-1">Build automated tests using AI or manual recording</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <div className="w-5 h-5 bg-purple-100 rounded-full flex items-center justify-center mt-0.5">
+                        <span className="text-xs font-medium text-purple-600">3</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Collaborate with team</span>
+                        <p className="text-xs text-gray-500 mt-1">Share projects and track progress together</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Quick Links */}
+                <div className="mt-6 flex items-center justify-center space-x-4 text-sm">
+                  <Link 
+                    to="/features" 
+                    className="flex items-center text-blue-600 hover:text-blue-700"
+                  >
+                    <BookOpen className="w-4 h-4 mr-1" />
+                    Learn more
+                  </Link>
+                  <span className="text-gray-300">•</span>
+                  <Link 
+                    to="/test-targets" 
+                    className="flex items-center text-blue-600 hover:text-blue-700"
+                  >
+                    <Target className="w-4 h-4 mr-1" />
+                    Browse test targets
+                    <ArrowRight className="w-3 h-3 ml-1" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // Filtered empty state - projects exist but none match current filters
+            <div className="max-w-sm mx-auto">
+              <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-4">
+                <Search className="w-6 h-6 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No projects found
+              </h3>
+              <p className="text-gray-500 mb-4">
+                Try adjusting your search or filters to find what you're looking for.
+              </p>
+              <div className="flex items-center justify-center space-x-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setSearchTerm("");
+                    setStatusFilter("all");
+                  }}
+                >
+                  Clear Filters
+                </Button>
+                <Button onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Project
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Archived Projects Section */}
       {stats.archived > 0 && statusFilter === "all" && (

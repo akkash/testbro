@@ -14,6 +14,16 @@ import {
   Eye,
   Download,
   Share,
+  Zap,
+  User,
+  ShoppingCart,
+  Search,
+  LogIn,
+  Bot,
+  Lightbulb,
+  History,
+  PlayCircle,
+  FileText,
 } from "lucide-react";
 import BrowserControlDashboard from "@/polymet/components/browser-control-dashboard";
 import TestRecordingInterface from "@/polymet/components/test-recording-interface";
@@ -200,6 +210,10 @@ interface BrowserAutomationDashboardState {
   activeSessions: number;
   recordingSessions: number;
   playbackSessions: number;
+  showSessionHistory: boolean;
+  showAISuggestions: boolean;
+}
+  playbackSessions: number;
 }
 
 export default function BrowserAutomationDashboard() {
@@ -209,6 +223,8 @@ export default function BrowserAutomationDashboard() {
     activeSessions: 2,
     recordingSessions: 1,
     playbackSessions: 1,
+    showSessionHistory: false,
+    showAISuggestions: true,
   });
 
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "connecting" | "disconnected">("connected");
@@ -249,6 +265,24 @@ export default function BrowserAutomationDashboard() {
     } else if (action === 'stop') {
       setState(prev => ({ ...prev, playbackSessions: Math.max(0, prev.playbackSessions - 1) }));
     }
+  };
+
+  const handleQuickStartFlow = (flowType: string) => {
+    console.log("Starting quick flow:", flowType);
+    setState(prev => ({ ...prev, recordingSessions: prev.recordingSessions + 1 }));
+  };
+
+  const handleConvertToTestCase = (recordingId: string) => {
+    console.log("Converting recording to test case:", recordingId);
+    // This would integrate with test case creation flow
+  };
+
+  const toggleSessionHistory = () => {
+    setState(prev => ({ ...prev, showSessionHistory: !prev.showSessionHistory }));
+  };
+
+  const dismissAISuggestion = () => {
+    setState(prev => ({ ...prev, showAISuggestions: false }));
   };
 
   const handleScreenshotSelect = (screenshot: any) => {
@@ -339,7 +373,7 @@ export default function BrowserAutomationDashboard() {
               </Tooltip>
             </div>
 
-            {/* Quick Actions */}
+            {/* Quick Actions & Quick Start Flows */}
             <div className="flex items-center space-x-2">
               <Dialog>
                 <DialogTrigger asChild>
@@ -369,6 +403,15 @@ export default function BrowserAutomationDashboard() {
                   </div>
                 </DialogContent>
               </Dialog>
+
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={toggleSessionHistory}
+              >
+                <History className="w-4 h-4 mr-2" />
+                {state.showSessionHistory ? 'Hide' : 'Show'} History
+              </Button>
 
               <Button variant="outline" size="sm">
                 <Download className="w-4 h-4 mr-2" />
@@ -401,20 +444,225 @@ export default function BrowserAutomationDashboard() {
 
           {/* Browser Control Dashboard */}
           <TabsContent value="control" className="space-y-6">
-            <BrowserControlDashboard 
-              onSessionCreate={handleSessionCreate}
-              className="w-full"
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <BrowserControlDashboard 
+                  onSessionCreate={handleSessionCreate}
+                  className="w-full"
+                />
+              </div>
+              
+              {/* Session History Sidebar */}
+              {state.showSessionHistory && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <History className="w-4 h-4 text-gray-600" />
+                      <span>Session History</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Recent browser sessions and recordings
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {[
+                        {
+                          id: "session_1",
+                          type: "recording",
+                          name: "Login Flow Recording",
+                          status: "completed",
+                          duration: "2m 34s",
+                          timestamp: "2 hours ago",
+                          hasReplay: true
+                        },
+                        {
+                          id: "session_2",
+                          type: "playback",
+                          name: "Checkout Test Replay",
+                          status: "completed",
+                          duration: "1m 45s",
+                          timestamp: "4 hours ago",
+                          hasReplay: true
+                        },
+                        {
+                          id: "session_3",
+                          type: "recording",
+                          name: "Search Feature Test",
+                          status: "running",
+                          duration: "45s",
+                          timestamp: "now",
+                          hasReplay: false
+                        }
+                      ].map((session) => (
+                        <div 
+                          key={session.id} 
+                          className="border rounded-lg p-3 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                              {session.type === 'recording' ? (
+                                <Camera className="w-4 h-4 text-red-500" />
+                              ) : (
+                                <PlayCircle className="w-4 h-4 text-blue-500" />
+                              )}
+                              <span className="text-sm font-medium">{session.name}</span>
+                            </div>
+                            <Badge 
+                              variant={session.status === 'completed' ? 'default' : 'secondary'}
+                              className="text-xs"
+                            >
+                              {session.status}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span>{session.duration}</span>
+                            <span>{session.timestamp}</span>
+                          </div>
+                          {session.hasReplay && (
+                            <div className="mt-2 flex items-center space-x-1">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-6 text-xs"
+                                onClick={() => console.log('View replay:', session.id)}
+                              >
+                                <PlayCircle className="w-3 h-3 mr-1" />
+                                Replay
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-6 text-xs"
+                                onClick={() => handleConvertToTestCase(session.id)}
+                              >
+                                <FileText className="w-3 h-3 mr-1" />
+                                Convert
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
             
 
           </TabsContent>
 
           {/* Test Recording Interface */}
           <TabsContent value="recording" className="space-y-6">
-            <TestRecordingInterface 
-              onRecordingComplete={handleRecordingComplete}
-              className="w-full"
-            />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <TestRecordingInterface 
+                  onRecordingComplete={handleRecordingComplete}
+                  className="w-full"
+                />
+              </div>
+              
+              {/* Recording History Sidebar */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Camera className="w-4 h-4 text-red-600" />
+                    <span>Recent Recordings</span>
+                  </CardTitle>
+                  <CardDescription>
+                    Your recorded test sessions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {[
+                      {
+                        id: "rec_1",
+                        name: "Login Flow - Success Path",
+                        duration: "2m 34s",
+                        steps: 8,
+                        timestamp: "2 hours ago",
+                        canConvert: true
+                      },
+                      {
+                        id: "rec_2",
+                        name: "Checkout Process",
+                        duration: "4m 12s",
+                        steps: 15,
+                        timestamp: "1 day ago",
+                        canConvert: true
+                      },
+                      {
+                        id: "rec_3",
+                        name: "Search & Filter",
+                        duration: "1m 45s",
+                        steps: 6,
+                        timestamp: "2 days ago",
+                        canConvert: true
+                      }
+                    ].map((recording) => (
+                      <div 
+                        key={recording.id} 
+                        className="border rounded-lg p-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="text-sm font-medium">{recording.name}</h4>
+                          {recording.canConvert && (
+                            <div className="flex items-center space-x-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                              <Bot className="w-3 h-3" />
+                              <span>AI Ready</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                          <span>{recording.duration} • {recording.steps} steps</span>
+                          <span>{recording.timestamp}</span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 text-xs"
+                          >
+                            <PlayCircle className="w-3 h-3 mr-1" />
+                            Replay
+                          </Button>
+                          {recording.canConvert && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 text-xs text-green-600"
+                              onClick={() => handleConvertToTestCase(recording.id)}
+                            >
+                              <FileText className="w-3 h-3 mr-1" />
+                              Convert
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* AI Conversion Suggestion */}
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Bot className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-900">AI Suggestion</span>
+                    </div>
+                    <p className="text-xs text-blue-800 mb-2">
+                      Convert your recordings to automated test cases for continuous testing.
+                    </p>
+                    <Button 
+                      size="sm" 
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-xs"
+                      onClick={() => handleConvertToTestCase('bulk')}
+                    >
+                      Convert All to Test Cases
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
             
             {/* Recording Tips */}
             <Card>

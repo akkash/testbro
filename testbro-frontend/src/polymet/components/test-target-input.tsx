@@ -10,6 +10,13 @@ import {
   XCircle,
   Clock,
   AlertCircle,
+  Filter,
+  TrendingUp,
+  TrendingDown,
+  ChevronDown,
+  ChevronUp,
+  FolderOpen,
+  Folder,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +60,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { mockTestTargets, TestTarget } from "@/polymet/data/test-data";
+import { mockTestTargets, TestTarget, mockProjects } from "@/polymet/data/test-data";
 
 interface NewTargetForm {
   name: string;
@@ -73,8 +80,8 @@ const platformIcons: Record<NewTargetForm["platform"], LucideIcon> = {
   "mobile-app": Monitor,
 };
 
-// Simple sparkline component
-const Sparkline = ({ data, isPositive }: { data: number[]; isPositive: boolean }) => {
+// Simple sparkline component with trend arrow
+const Sparkline = ({ data, change, isPositive }: { data: number[]; change: number; isPositive: boolean }) => {
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
@@ -87,16 +94,24 @@ const Sparkline = ({ data, isPositive }: { data: number[]; isPositive: boolean }
     })
     .join(" ");
 
+  const TrendIcon = change > 0 ? TrendingUp : change < 0 ? TrendingDown : null;
+  const trendColor = change > 0 ? "text-green-500" : change < 0 ? "text-red-500" : "text-gray-400";
+
   return (
-    <svg width="80" height="20" viewBox="0 0 100 100" className="overflow-visible">
-      <polyline
-        fill="none"
-        stroke={isPositive ? "#10B981" : "#EF4444"}
-        strokeWidth="2"
-        points={points}
-        className="transition-all duration-200"
-      />
-    </svg>
+    <div className="flex items-center space-x-1">
+      <svg width="60" height="20" viewBox="0 0 100 100" className="overflow-visible">
+        <polyline
+          fill="none"
+          stroke={isPositive ? "#10B981" : "#EF4444"}
+          strokeWidth="2"
+          points={points}
+          className="transition-all duration-200"
+        />
+      </svg>
+      {TrendIcon && (
+        <TrendIcon className={`w-3 h-3 ${trendColor}`} />
+      )}
+    </div>
   );
 };
 
@@ -105,6 +120,9 @@ export default function TestTargetInput() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState<TestTarget | null>(null);
   const [showOnlyFailing, setShowOnlyFailing] = useState(false);
+  const [environmentFilter, setEnvironmentFilter] = useState<string>("all");
+  const [groupByProject, setGroupByProject] = useState(false);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState<NewTargetForm>({
     name: "",
     url: "",
@@ -212,9 +230,9 @@ export default function TestTargetInput() {
     );
   };
 
-  // Generate mock trend data for sparklines (derived each render but memoized per target snapshot)
+  // Generate mock trend data for sparklines with change indicators
   const passRateTrends = useMemo(() => {
-    const trends: Record<string, number[]> = {};
+    const trends: Record<string, { data: number[]; change: number }> = {};
     for (const t of targets) {
       const base = t.passRate || 0;
       const arr: number[] = [];
@@ -222,26 +240,79 @@ export default function TestTargetInput() {
         const v = Math.max(0, Math.min(100, base + (Math.random() - 0.5) * 10));
         arr.push(v);
       }
-      trends[t.id] = arr;
+      // Calculate change from previous period (last vs second to last)
+      const change = arr.length >= 2 ? arr[arr.length - 1] - arr[arr.length - 2] : 0;
+      trends[t.id] = { data: arr, change };
     }
     return trends;
   }, [targets]);
 
   const uxScoreTrends = useMemo(() => {
-    const trends: Record<string, number[]> = {};
+    const trends: Record<string, { data: number[]; change: number }> = {};
     for (const t of targets) {
       const base = (t as any).avgUxScore || 0;
       const arr: number[] = [];
       for (let i = 0; i < 7; i++) {
-        const v = Math.max(0, Math.min(1, base + (Math.random() - 0.5) * 0.4));
+        const v = Math.max(0, Math.min(100, base + (Math.random() - 0.5) * 15));
         arr.push(v);
       }
-      trends[t.id] = arr;
+      // Calculate change from previous period
+      const change = arr.length >= 2 ? arr[arr.length - 1] - arr[arr.length - 2] : 0;
+      trends[t.id] = { data: arr, change };
     }
     return trends;
   }, [targets]);
 
-  const filteredTargets = showOnlyFailing ? targets.filter((t) => (t.passRate ?? 0) < 70) : targets;
+  // Apply filters
+  const filteredTargets = useMemo(() => {
+    let filtered = targets;
+    
+    // Filter by failing targets
+    if (showOnlyFailing) {
+      filtered = filtered.filter((t) => (t.passRate ?? 0) < 70);
+    }
+    
+    // Filter by environment
+    if (environmentFilter !== "all") {
+      filtered = filtered.filter((t) => t.environment === environmentFilter);
+    }
+    
+    return filtered;
+  }, [targets, showOnlyFailing, environmentFilter]);
+
+  // Group targets by project if enabled
+  const groupedTargets = useMemo(() => {
+    if (!groupByProject) {
+      return { ungrouped: filteredTargets };
+    }
+    
+    const groups: Record<string, TestTarget[]> = {};
+    filteredTargets.forEach((target) => {
+      const project = mockProjects.find(p => p.id === target.projectId);
+      const projectName = project?.name || "Unknown Project";
+      if (!groups[projectName]) {
+        groups[projectName] = [];
+      }
+      groups[projectName].push(target);
+    });
+    
+    // Auto-expand all projects when first enabling grouping
+    if (groupByProject && expandedProjects.size === 0) {
+      setExpandedProjects(new Set(Object.keys(groups)));
+    }
+    
+    return groups;
+  }, [filteredTargets, groupByProject]);
+
+  const toggleProjectExpansion = (projectName: string) => {
+    const newExpanded = new Set(expandedProjects);
+    if (newExpanded.has(projectName)) {
+      newExpanded.delete(projectName);
+    } else {
+      newExpanded.add(projectName);
+    }
+    setExpandedProjects(newExpanded);
+  };
 
   return (
     <React.Fragment>
@@ -253,9 +324,41 @@ export default function TestTargetInput() {
             <p className="text-sm text-muted-foreground">Manage and monitor your test target applications</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant={showOnlyFailing ? "destructive" : "outline"} onClick={() => setShowOnlyFailing((v) => !v)}>
-              {showOnlyFailing ? "Showing Failing" : "Show Only Failing"}
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Environment Filter */}
+              <Select value={environmentFilter} onValueChange={setEnvironmentFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Environment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Environments</SelectItem>
+                  <SelectItem value="production">Production</SelectItem>
+                  <SelectItem value="staging">Staging</SelectItem>
+                  <SelectItem value="development">Development</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              {/* Failing Filter Toggle */}
+              <Button 
+                variant={showOnlyFailing ? "destructive" : "outline"} 
+                onClick={() => setShowOnlyFailing((v) => !v)}
+                className="flex items-center gap-2"
+              >
+                <Filter className="w-4 h-4" />
+                {showOnlyFailing ? "Showing Failing" : "Show Only Failing"}
+              </Button>
+              
+              {/* Group by Project Toggle */}
+              <Button 
+                variant={groupByProject ? "default" : "outline"} 
+                onClick={() => setGroupByProject((v) => !v)}
+                className="flex items-center gap-2"
+              >
+                {groupByProject ? <FolderOpen className="w-4 h-4" /> : <Folder className="w-4 h-4" />}
+                Group by Project
+              </Button>
+            </div>
+            
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -327,98 +430,243 @@ export default function TestTargetInput() {
         </div>
 
         {/* Table */}
-        {filteredTargets.length > 0 ? (
+        {Object.keys(groupedTargets).length > 0 && Object.values(groupedTargets).some(group => group.length > 0) ? (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Globe className="w-5 h-5 text-blue-600" />
                 <span>Target Applications</span>
-                {showOnlyFailing && (
-                  <Badge variant="destructive" className="ml-2">
-                    Showing {filteredTargets.length} failing targets
-                  </Badge>
+                {(showOnlyFailing || environmentFilter !== "all") && (
+                  <div className="flex items-center gap-2">
+                    {showOnlyFailing && (
+                      <Badge variant="destructive" className="ml-2">
+                        Showing {Object.values(groupedTargets).flat().length} failing targets
+                      </Badge>
+                    )}
+                    {environmentFilter !== "all" && (
+                      <Badge variant="outline" className="ml-2 capitalize">
+                        {environmentFilter} only
+                      </Badge>
+                    )}
+                  </div>
                 )}
               </CardTitle>
               <CardDescription>Manage and monitor your test target applications</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Target</TableHead>
-                    <TableHead>Platform</TableHead>
-                    <TableHead>Environment</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Run</TableHead>
-                    <TableHead>Pass Rate</TableHead>
-                    <TableHead>UX Score</TableHead>
-                    <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTargets.map((target) => {
-                    const Icon = platformIcons[target.platform];
-                    const passTrend = passRateTrends[target.id] || [];
-                    const uxTrend = uxScoreTrends[target.id] || [];
-                    const uxScore = (target as any).avgUxScore as number | undefined;
-
-                    return (
-                      <TableRow key={target.id} className={(target.passRate ?? 0) < 70 ? "bg-red-50 border-l-4 border-red-500" : ""}>
-                        <TableCell className="font-medium">{target.name}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center">
-                            <Icon className="w-4 h-4 text-muted-foreground" />
-                            <span className="ml-2 capitalize">{target.platform.replace("-", " ")}</span>
+              {groupByProject ? (
+                // Grouped View
+                <div className="space-y-6">
+                  {Object.entries(groupedTargets).map(([projectName, projectTargets]) => (
+                    <div key={projectName} className="border rounded-lg">
+                      <div 
+                        className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => toggleProjectExpansion(projectName)}
+                      >
+                        <div className="flex items-center space-x-3">
+                          {expandedProjects.has(projectName) ? (
+                            <ChevronDown className="w-4 h-4 text-gray-500" />
+                          ) : (
+                            <ChevronUp className="w-4 h-4 text-gray-500" />
+                          )}
+                          <div>
+                            <h3 className="font-medium text-gray-900">{projectName}</h3>
+                            <p className="text-sm text-gray-500">{projectTargets.length} targets</p>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="capitalize">{target.environment}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={target.status === "active" ? "default" : "secondary"} className="capitalize">
-                            {target.status}
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          <div className="text-sm text-gray-600">
+                            Avg Pass Rate: {Math.round(projectTargets.reduce((sum, t) => sum + (t.passRate || 0), 0) / projectTargets.length)}%
+                          </div>
+                          <Badge 
+                            variant="outline" 
+                            className={projectTargets.some(t => (t.passRate || 0) < 70) ? "border-red-300 text-red-700" : "border-green-300 text-green-700"}
+                          >
+                            {projectTargets.filter(t => (t.passRate || 0) >= 70).length}/{projectTargets.length} passing
                           </Badge>
-                        </TableCell>
-                        <TableCell>{target.updatedAt ? new Date(target.updatedAt).toLocaleString() : "—"}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center">
-                            <span className="mr-2">{target.passRate}%</span>
-                            {passTrend.length > 0 && (
-                              <Sparkline data={passTrend} isPositive={(target.passRate ?? 0) >= 70} />
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center">
-                            <span className="mr-2">{uxScore !== undefined ? uxScore.toFixed(2) : "—"}</span>
-                            {uxTrend.length > 0 && (
-                              <Sparkline data={uxTrend} isPositive={(uxScore ?? 0) >= 0.5} />
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" variant="default" onClick={() => handleRunTarget(target.id)}>
-                              Run
-                            </Button>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button size="sm" variant="outline">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEdit(target)}>Edit</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDelete(target.id)}>Delete</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                        </div>
+                      </div>
+                      
+                      {expandedProjects.has(projectName) && (
+                        <div className="p-4 pt-0">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Target</TableHead>
+                                <TableHead>Platform</TableHead>
+                                <TableHead>Environment</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Last Run</TableHead>
+                                <TableHead>Pass Rate</TableHead>
+                                <TableHead>UX Score</TableHead>
+                                <TableHead className="w-40">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {projectTargets.map((target) => {
+                                const Icon = platformIcons[target.platform];
+                                const passTrend = passRateTrends[target.id];
+                                const uxTrend = uxScoreTrends[target.id];
+                                const uxScore = (target as any).avgUxScore as number | undefined;
+
+                                return (
+                                  <TableRow key={target.id} className={(target.passRate ?? 0) < 70 ? "bg-red-50 border-l-4 border-red-500" : ""}>
+                                    <TableCell className="font-medium">{target.name}</TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center">
+                                        <Icon className="w-4 h-4 text-muted-foreground" />
+                                        <span className="ml-2 capitalize">{target.platform.replace("-", " ")}</span>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant="secondary" className="capitalize">{target.environment}</Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant={target.status === "active" ? "default" : "secondary"} className="capitalize">
+                                        {target.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>{target.updatedAt ? new Date(target.updatedAt).toLocaleString() : "—"}</TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center">
+                                        <span className="mr-2">{target.passRate}%</span>
+                                        {passTrend && (
+                                          <Sparkline 
+                                            data={passTrend.data} 
+                                            change={passTrend.change}
+                                            isPositive={(target.passRate ?? 0) >= 70} 
+                                          />
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center">
+                                        <span className="mr-2">{uxScore !== undefined ? uxScore.toFixed(0) : "—"}</span>
+                                        {uxTrend && (
+                                          <Sparkline 
+                                            data={uxTrend.data} 
+                                            change={uxTrend.change}
+                                            isPositive={(uxScore ?? 0) >= 70} 
+                                          />
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center gap-2">
+                                        <Button size="sm" variant="default" onClick={() => handleRunTarget(target.id)}>
+                                          Run
+                                        </Button>
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button size="sm" variant="outline">
+                                              <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onClick={() => handleEdit(target)}>Edit</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleDelete(target.id)}>Delete</DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                // Standard Table View
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Target</TableHead>
+                      <TableHead>Platform</TableHead>
+                      <TableHead>Environment</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Run</TableHead>
+                      <TableHead>Pass Rate</TableHead>
+                      <TableHead>UX Score</TableHead>
+                      <TableHead className="w-40">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupedTargets.ungrouped?.map((target) => {
+                      const Icon = platformIcons[target.platform];
+                      const passTrend = passRateTrends[target.id];
+                      const uxTrend = uxScoreTrends[target.id];
+                      const uxScore = (target as any).avgUxScore as number | undefined;
+
+                      return (
+                        <TableRow key={target.id} className={(target.passRate ?? 0) < 70 ? "bg-red-50 border-l-4 border-red-500" : ""}>
+                          <TableCell className="font-medium">{target.name}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center">
+                              <Icon className="w-4 h-4 text-muted-foreground" />
+                              <span className="ml-2 capitalize">{target.platform.replace("-", " ")}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="capitalize">{target.environment}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={target.status === "active" ? "default" : "secondary"} className="capitalize">
+                              {target.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{target.updatedAt ? new Date(target.updatedAt).toLocaleString() : "—"}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center">
+                              <span className="mr-2">{target.passRate}%</span>
+                              {passTrend && (
+                                <Sparkline 
+                                  data={passTrend.data} 
+                                  change={passTrend.change}
+                                  isPositive={(target.passRate ?? 0) >= 70} 
+                                />
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center">
+                              <span className="mr-2">{uxScore !== undefined ? uxScore.toFixed(0) : "—"}</span>
+                              {uxTrend && (
+                                <Sparkline 
+                                  data={uxTrend.data} 
+                                  change={uxTrend.change}
+                                  isPositive={(uxScore ?? 0) >= 70} 
+                                />
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" variant="default" onClick={() => handleRunTarget(target.id)}>
+                                Run
+                              </Button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button size="sm" variant="outline">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleEdit(target)}>Edit</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDelete(target.id)}>Delete</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -427,15 +675,26 @@ export default function TestTargetInput() {
               <Globe className="w-6 h-6 text-gray-400" />
             </div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {showOnlyFailing ? "No failing targets found" : "No targets configured"}
+              {showOnlyFailing || environmentFilter !== "all" 
+                ? "No targets match your filters" 
+                : "No targets configured"
+              }
             </h3>
             <p className="text-gray-500 mb-4">
-              {showOnlyFailing ? "All your targets are currently passing! 🎉" : "Add your first target application to start testing"}
+              {showOnlyFailing 
+                ? "All your targets are currently passing! 🎉" 
+                : environmentFilter !== "all"
+                ? `No targets found in ${environmentFilter} environment`
+                : "Add your first target application to start testing"
+              }
             </p>
             <div className="flex items-center justify-center space-x-3">
-              {showOnlyFailing && (
-                <Button variant="outline" onClick={() => setShowOnlyFailing(false)}>
-                  Show All Targets
+              {(showOnlyFailing || environmentFilter !== "all") && (
+                <Button variant="outline" onClick={() => {
+                  setShowOnlyFailing(false);
+                  setEnvironmentFilter("all");
+                }}>
+                  Clear Filters
                 </Button>
               )}
               <Button onClick={() => setIsDialogOpen(true)}>
