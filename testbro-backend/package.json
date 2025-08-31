@@ -28,6 +28,7 @@
     "@types/compression": "^1.8.1",
     "@types/nodemailer": "^7.0.1",
     "@types/pg": "^8.15.5",
+    "ajv": "^8.17.1",
     "bullmq": "^4.15.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",

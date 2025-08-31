@@ -1,11 +1,15 @@
 import express, { Request, Response } from 'express';
 import { supabaseAdmin, TABLES } from '../config/database';
-import { authenticateUser, requireProjectAccess } from '../middleware/auth';
+import { authenticateUser, requireProjectAccess, requireRole } from '../middleware/auth';
 import { validate, validateParams, paramSchemas } from '../middleware/validation';
 import { schemas } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import { paginationService } from '../services/paginationService';
 import { APIResponse } from '../types';
+import { secretsEncryption, SecretValue, EncryptedSecret, DecryptedSecret } from '../services/secretsEncryptionService';
+import { otpManager, createOtpConfig, type OtpProviderConfig } from '../services/otpProviderService';
+import { logger, LogCategory } from '../services/loggingService';
+import Joi from 'joi';
 
 const router = express.Router();
 
@@ -504,5 +508,655 @@ router.get('/:id/stats',
     }
   })
 );
+
+// =============================================
+// PROJECT SECRETS MANAGEMENT ROUTES
+// =============================================
+
+// Validation schemas for secrets
+const secretSchemas = {
+  createSecret: Joi.object({
+    secretKey: Joi.string().min(1).max(100).required(),
+    secretType: Joi.string().valid('username_password', 'phone_otp', 'api_key', 'custom').required(),
+    value: Joi.object({
+      username: Joi.string().max(255).optional(),
+      password: Joi.string().max(1000).optional(),
+      phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).optional(),
+      apiKey: Joi.string().max(1000).optional(),
+      custom: Joi.object().optional()
+    }).required(),
+    description: Joi.string().max(500).optional(),
+    metadata: Joi.object().optional()
+  }),
+
+  updateSecret: Joi.object({
+    secretKey: Joi.string().min(1).max(100).optional(),
+    value: Joi.object({
+      username: Joi.string().max(255).optional(),
+      password: Joi.string().max(1000).optional(),
+      phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).optional(),
+      apiKey: Joi.string().max(1000).optional(),
+      custom: Joi.object().optional()
+    }).optional(),
+    description: Joi.string().max(500).optional(),
+    metadata: Joi.object().optional(),
+    isActive: Joi.boolean().optional()
+  })
+};
+
+/**
+ * POST /api/projects/:id/secrets
+ * Create or update a project secret
+ */
+router.post('/:id/secrets', 
+  validateParams(paramSchemas.id),
+  requireProjectAccess,
+  requireRole('admin'), // Only admins can manage secrets
+  validate(secretSchemas.createSecret),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id: projectId } = req.params;
+    const { secretKey, secretType, value, description, metadata = {} } = req.body;
+    const userId = req.user!.id;
+    const clientIp = req.ip || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    try {
+      // Check if secret key already exists
+      const { data: existingSecret } = await supabaseAdmin
+        .from(TABLES.PROJECT_SECRETS)
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('secret_key', secretKey)
+        .single();
+
+      // Encrypt the secret value
+      const encryptedValue = secretsEncryption.encryptObject(value, `${projectId}:${secretKey}`);
+      const encryptedMetadata = secretsEncryption.encryptObject(metadata, `${projectId}:${secretKey}:meta`);
+
+      let result;
+
+      if (existingSecret) {
+        // Update existing secret
+        const { data: updatedSecret, error } = await supabaseAdmin
+          .from(TABLES.PROJECT_SECRETS)
+          .update({
+            secret_type: secretType,
+            encrypted_value: encryptedValue,
+            encrypted_metadata: encryptedMetadata,
+            description,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingSecret.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        result = updatedSecret;
+
+        // Log audit trail
+        await supabaseAdmin.rpc('log_secret_usage', {
+          p_secret_id: existingSecret.id,
+          p_project_id: projectId,
+          p_operation: 'UPDATE',
+          p_ip_address: clientIp,
+          p_user_agent: userAgent,
+          p_metadata: { secretKey, secretType }
+        });
+      } else {
+        // Create new secret
+        const { data: newSecret, error } = await supabaseAdmin
+          .from(TABLES.PROJECT_SECRETS)
+          .insert({
+            project_id: projectId,
+            secret_key: secretKey,
+            secret_type: secretType,
+            encrypted_value: encryptedValue,
+            encrypted_metadata: encryptedMetadata,
+            description,
+            created_by: userId
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        result = newSecret;
+
+        // Log audit trail
+        await supabaseAdmin.rpc('log_secret_usage', {
+          p_secret_id: newSecret.id,
+          p_project_id: projectId,
+          p_operation: 'CREATE',
+          p_ip_address: clientIp,
+          p_user_agent: userAgent,
+          p_metadata: { secretKey, secretType }
+        });
+      }
+
+      // Return response without sensitive data
+      const response: APIResponse<Partial<EncryptedSecret>> = {
+        data: {
+          id: result.id,
+          projectId: result.project_id,
+          secretKey: result.secret_key,
+          secretType: result.secret_type,
+          description: result.description,
+          isActive: result.is_active,
+          createdAt: result.created_at,
+          updatedAt: result.updated_at
+        },
+        meta: {
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      res.status(existingSecret ? 200 : 201).json(response);
+    } catch (error) {
+      console.error('Secret creation/update error:', error);
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to create or update secret',
+      });
+    }
+  })
+);
+
+/**
+ * GET /api/projects/:id/secrets
+ * Get all secrets for a project (masked for security)
+ */
+router.get('/:id/secrets',
+  validateParams(paramSchemas.id),
+  requireProjectAccess,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id: projectId } = req.params;
+    const userId = req.user!.id;
+    const clientIp = req.ip || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    try {
+      // Get all secrets for the project
+      const { data: secrets, error } = await supabaseAdmin
+        .from(TABLES.PROJECT_SECRETS)
+        .select(`
+          id,
+          secret_key,
+          secret_type,
+          description,
+          is_active,
+          last_used_at,
+          used_count,
+          created_at,
+          updated_at
+        `)
+        .eq('project_id', projectId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Log audit trail for read operation
+      if (secrets && secrets.length > 0) {
+        await supabaseAdmin.rpc('log_secret_usage', {
+          p_secret_id: null,
+          p_project_id: projectId,
+          p_operation: 'READ',
+          p_ip_address: clientIp,
+          p_user_agent: userAgent,
+          p_metadata: { count: secrets.length }
+        });
+      }
+
+      const response: APIResponse<any[]> = {
+        data: secrets || [],
+        meta: {
+          timestamp: new Date().toISOString(),
+          totalSecrets: secrets?.length || 0
+        }
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error('Secrets fetch error:', error);
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to fetch secrets',
+      });
+    }
+  })
+);
+
+/**
+ * GET /api/projects/:id/secrets/:key/reveal
+ * Reveal a specific secret (admin only)
+ */
+router.get('/:id/secrets/:key/reveal',
+  validateParams(paramSchemas.id),
+  requireProjectAccess,
+  requireRole('admin'), // Only admins can reveal secrets
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id: projectId, key: secretKey } = req.params;
+    const userId = req.user!.id;
+    const clientIp = req.ip || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    try {
+      // Get the specific secret
+      const { data: secret, error } = await supabaseAdmin
+        .from(TABLES.PROJECT_SECRETS)
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('secret_key', secretKey)
+        .eq('is_active', true)
+        .single();
+
+      if (error || !secret) {
+        return res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Secret not found',
+        });
+      }
+
+      // Decrypt the secret value
+      const decryptedValue = secretsEncryption.decryptObject(
+        secret.encrypted_value,
+        `${projectId}:${secretKey}`
+      );
+
+      const decryptedMetadata = secretsEncryption.decryptObject(
+        secret.encrypted_metadata,
+        `${projectId}:${secretKey}:meta`
+      );
+
+      // Log audit trail
+      await supabaseAdmin.rpc('log_secret_usage', {
+        p_secret_id: secret.id,
+        p_project_id: projectId,
+        p_operation: 'READ',
+        p_ip_address: clientIp,
+        p_user_agent: userAgent,
+        p_metadata: { secretKey, revealed: true }
+      });
+
+      const decryptedSecret: DecryptedSecret = {
+        id: secret.id,
+        projectId: secret.project_id,
+        secretKey: secret.secret_key,
+        secretType: secret.secret_type,
+        value: decryptedValue,
+        metadata: decryptedMetadata,
+        description: secret.description,
+        isActive: secret.is_active,
+        lastUsedAt: secret.last_used_at,
+        usedCount: secret.used_count,
+        createdBy: secret.created_by,
+        createdAt: secret.created_at,
+        updatedAt: secret.updated_at
+      };
+
+      const response: APIResponse<DecryptedSecret> = {
+        data: decryptedSecret,
+        meta: {
+          timestamp: new Date().toISOString(),
+          warning: 'This contains sensitive data - handle with care'
+        }
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error('Secret reveal error:', error);
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to reveal secret',
+      });
+    }
+  })
+);
+
+/**
+ * DELETE /api/projects/:id/secrets/:key
+ * Delete a project secret
+ */
+router.delete('/:id/secrets/:key',
+  validateParams(paramSchemas.id),
+  requireProjectAccess,
+  requireRole('admin'), // Only admins can delete secrets
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id: projectId, key: secretKey } = req.params;
+    const userId = req.user!.id;
+    const clientIp = req.ip || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    try {
+      // Get the secret to verify it exists and get its ID for audit
+      const { data: secret, error: fetchError } = await supabaseAdmin
+        .from(TABLES.PROJECT_SECRETS)
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('secret_key', secretKey)
+        .single();
+
+      if (fetchError || !secret) {
+        return res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Secret not found',
+        });
+      }
+
+      // Log audit trail before deletion
+      await supabaseAdmin.rpc('log_secret_usage', {
+        p_secret_id: secret.id,
+        p_project_id: projectId,
+        p_operation: 'DELETE',
+        p_ip_address: clientIp,
+        p_user_agent: userAgent,
+        p_metadata: { secretKey }
+      });
+
+      // Delete the secret
+      const { error: deleteError } = await supabaseAdmin
+        .from(TABLES.PROJECT_SECRETS)
+        .delete()
+        .eq('id', secret.id);
+
+      if (deleteError) throw deleteError;
+
+      const response: APIResponse<{ deleted: boolean }> = {
+        data: { deleted: true },
+        meta: {
+          timestamp: new Date().toISOString(),
+          secretKey
+        }
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error('Secret deletion error:', error);
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to delete secret',
+      });
+    }
+  })
+);
+
+// =============================================
+// OTP Provider Configuration Endpoints
+// =============================================
+
+/**
+ * GET /api/projects/:id/otp-config
+ * Get OTP provider configuration status
+ * Only admin users can access this endpoint
+ */
+router.get('/:id/otp-config',
+  validateParams(paramSchemas.id),
+  requireProjectAccess,
+  requireRole('admin'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      // Get available providers and current configuration
+      const availableProviders = otpManager.getAvailableProviders();
+      const currentProvider = otpManager.getCurrentProviderName();
+      const validationResults = await otpManager.validateAllProviders();
+
+      logger.info('OTP configuration accessed', LogCategory.SECURITY, {
+        projectId: req.params.id,
+        userId: req.user!.id,
+        currentProvider
+      });
+
+      res.json({
+        data: {
+          currentProvider,
+          availableProviders,
+          providerStatus: validationResults,
+          supportedProviders: [
+            {
+              name: 'mock',
+              displayName: 'Mock Provider (Testing)',
+              description: 'For development and testing purposes',
+              configFields: ['defaultMockOtp', 'otpLength', 'validityMinutes']
+            },
+            {
+              name: 'twilio',
+              displayName: 'Twilio SMS',
+              description: 'Production SMS delivery via Twilio',
+              configFields: ['twilioAccountSid', 'twilioAuthToken', 'twilioFromNumber']
+            },
+            {
+              name: 'aws-sns',
+              displayName: 'AWS SNS',
+              description: 'Enterprise SMS via Amazon SNS',
+              configFields: ['awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion']
+            }
+          ]
+        },
+        meta: {
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to get OTP configuration', LogCategory.SECURITY, {
+        projectId: req.params.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to get OTP configuration',
+      });
+    }
+  })
+);
+
+/**
+ * POST /api/projects/:id/otp-config
+ * Configure OTP provider for the project
+ * Only admin users can access this endpoint
+ */
+router.post('/:id/otp-config',
+  validateParams(paramSchemas.id),
+  requireProjectAccess,
+  requireRole('admin'),
+  validate(Joi.object({
+    provider: Joi.string().valid('mock', 'twilio', 'aws-sns').required(),
+    config: Joi.object({
+      // Twilio fields
+      twilioAccountSid: Joi.string().when('$provider', {
+        is: 'twilio',
+        then: Joi.required(),
+        otherwise: Joi.forbidden()
+      }),
+      twilioAuthToken: Joi.string().when('$provider', {
+        is: 'twilio',
+        then: Joi.required(),
+        otherwise: Joi.forbidden()
+      }),
+      twilioFromNumber: Joi.string().when('$provider', {
+        is: 'twilio',
+        then: Joi.required(),
+        otherwise: Joi.forbidden()
+      }),
+      
+      // AWS SNS fields
+      awsAccessKeyId: Joi.string().when('$provider', {
+        is: 'aws-sns',
+        then: Joi.required(),
+        otherwise: Joi.forbidden()
+      }),
+      awsSecretAccessKey: Joi.string().when('$provider', {
+        is: 'aws-sns',
+        then: Joi.required(),
+        otherwise: Joi.forbidden()
+      }),
+      awsRegion: Joi.string().when('$provider', {
+        is: 'aws-sns',
+        then: Joi.required(),
+        otherwise: Joi.forbidden()
+      }),
+      
+      // Mock provider fields
+      defaultMockOtp: Joi.string().when('$provider', {
+        is: 'mock',
+        then: Joi.optional(),
+        otherwise: Joi.forbidden()
+      }),
+      mockOtps: Joi.object().pattern(
+        Joi.string(), // phone number
+        Joi.string()  // OTP
+      ).when('$provider', {
+        is: 'mock',
+        then: Joi.optional(),
+        otherwise: Joi.forbidden()
+      }),
+      
+      // Common fields
+      otpLength: Joi.number().integer().min(4).max(8).optional(),
+      validityMinutes: Joi.number().integer().min(1).max(60).optional(),
+      maxRetries: Joi.number().integer().min(1).max(10).optional()
+    }).required()
+  }).options({ context: { provider: Joi.ref('provider') } }))),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { provider, config } = req.body;
+      const projectId = req.params.id;
+      const userId = req.user!.id;
+
+      // Create OTP configuration
+      const otpConfig = createOtpConfig(provider, config);
+      
+      // Configure the provider
+      const success = await otpManager.configureProvider(otpConfig);
+      
+      if (!success) {
+        return res.status(400).json({
+          error: 'CONFIGURATION_FAILED',
+          message: `Failed to configure ${provider} provider. Please check your credentials.`,
+        });
+      }
+
+      // Log the configuration change for audit
+      logger.info('OTP provider configured', LogCategory.SECURITY, {
+        projectId,
+        userId,
+        provider,
+        configFields: Object.keys(config)
+      });
+
+      // Return success with masked configuration
+      const maskedConfig = this.maskSensitiveConfig(config);
+      
+      res.json({
+        data: {
+          provider,
+          configured: true,
+          config: maskedConfig,
+          validationPassed: true
+        },
+        meta: {
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to configure OTP provider', LogCategory.SECURITY, {
+        projectId: req.params.id,
+        userId: req.user!.id,
+        provider: req.body.provider,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to configure OTP provider',
+      });
+    }
+  })
+);
+
+/**
+ * POST /api/projects/:id/otp-test
+ * Test OTP provider configuration
+ * Only admin users can access this endpoint
+ */
+router.post('/:id/otp-test',
+  validateParams(paramSchemas.id),
+  requireProjectAccess,
+  requireRole('admin'),
+  validate(Joi.object({
+    phoneNumber: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).required(),
+    provider: Joi.string().valid('mock', 'twilio', 'aws-sns').optional(),
+    customMessage: Joi.string().max(160).optional()
+  })),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { phoneNumber, provider, customMessage } = req.body;
+      const projectId = req.params.id;
+      const userId = req.user!.id;
+
+      logger.info('OTP test requested', LogCategory.SECURITY, {
+        projectId,
+        userId,
+        phoneNumber: phoneNumber.substring(0, 4) + '****',
+        provider: provider || 'current'
+      });
+
+      // Request OTP from the specified or current provider
+      const otp = await otpManager.getOtp(phoneNumber, {
+        customMessage: customMessage || `TestBro.ai test OTP: {OTP}. This is a test message.`,
+        timeout: 30000
+      }, provider);
+
+      res.json({
+        data: {
+          success: true,
+          testOtp: otp, // In production, you might want to mask this
+          phoneNumber: phoneNumber.substring(0, 4) + '****',
+          provider: provider || otpManager.getCurrentProviderName(),
+          message: 'OTP sent successfully'
+        },
+        meta: {
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error('OTP test failed', LogCategory.SECURITY, {
+        projectId: req.params.id,
+        userId: req.user!.id,
+        phoneNumber: req.body.phoneNumber?.substring(0, 4) + '****',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      res.status(400).json({
+        error: 'OTP_TEST_FAILED',
+        message: error instanceof Error ? error.message : 'Failed to send test OTP',
+      });
+    }
+  })
+);
+
+// Helper function to mask sensitive configuration
+function maskSensitiveConfig(config: any): any {
+  const masked = { ...config };
+  
+  // Mask sensitive fields
+  const sensitiveFields = [
+    'twilioAuthToken',
+    'awsSecretAccessKey',
+    'twilioAccountSid'
+  ];
+  
+  sensitiveFields.forEach(field => {
+    if (masked[field]) {
+      const value = masked[field];
+      if (value.length > 8) {
+        masked[field] = value.substring(0, 4) + '*'.repeat(value.length - 8) + value.substring(value.length - 4);
+      } else {
+        masked[field] = '*'.repeat(value.length);
+      }
+    }
+  });
+  
+  return masked;
+}
 
 export default router;

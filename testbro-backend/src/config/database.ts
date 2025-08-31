@@ -102,6 +102,8 @@ export const TABLES = {
   WEBHOOKS: 'webhooks',
   API_KEYS: 'api_keys',
   AUDIT_LOGS: 'audit_logs',
+  PROJECT_SECRETS: 'project_secrets',
+  PROJECT_SECRETS_AUDIT: 'project_secrets_audit',
 } as const;
 
 // Row Level Security (RLS) policies will be applied in Supabase

@@ -1,11 +1,29 @@
-import { APIResponse } from '../types/api';
+import { APIResponse } from '../types';
 import { APITestStep, APITestResult, APIRequestConfig } from '../types/apiTesting';
 import { logger, LogCategory } from './loggingService';
 import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
-import { validateResponseSchema } from '../utils/schemaValidator';
+import Ajv from 'ajv';
+
+// Extend AxiosRequestConfig to include metadata
+interface AxiosRequestConfigWithMetadata extends AxiosRequestConfig {
+  metadata?: {
+    startTime?: number;
+    endTime?: number;
+  };
+}
+
+// Type guard to check if AxiosRequestConfig has metadata
+function hasMetadata(config: AxiosRequestConfig): config is AxiosRequestConfigWithMetadata {
+  return 'metadata' in config;
+}
 
 export class APITestingService {
   private requestTimeout: number = 30000; // 30 seconds default
+  private ajv: Ajv;
+
+  constructor() {
+    this.ajv = new Ajv();
+  }
 
   /**
    * Execute an API test step
@@ -53,7 +71,7 @@ export class APITestingService {
         timestamp: new Date().toISOString()
       };
 
-      logger.info('API test step executed successfully', LogCategory.TEST_EXECUTION, {
+      logger.info('API test step executed successfully', LogCategory.API, {
         stepId: step.id,
         method: processedConfig.method,
         url: processedConfig.url,
@@ -77,7 +95,7 @@ export class APITestingService {
         timestamp: new Date().toISOString()
       };
 
-      logger.error('API test step failed', LogCategory.TEST_EXECUTION, {
+      logger.error('API test step failed', LogCategory.API, {
         stepId: step.id,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -110,7 +128,22 @@ export class APITestingService {
    * Execute HTTP request using axios
    */
   private async executeHTTPRequest(config: AxiosRequestConfig): Promise<AxiosResponse> {
-    return await axios(config);
+    // Add timing metadata to the request config
+    const configWithMetadata: AxiosRequestConfigWithMetadata = {
+      ...config,
+      metadata: {
+        startTime: Date.now()
+      }
+    };
+    
+    const response = await axios(configWithMetadata);
+    
+    // Add timing metadata to the response
+    if (hasMetadata(response.config) && response.config.metadata) {
+      response.config.metadata.endTime = Date.now();
+    }
+    
+    return response;
   }
 
   /**
@@ -135,7 +168,13 @@ export class APITestingService {
           break;
 
         case 'response_time':
-          const responseTime = response.config.metadata?.endTime - response.config.metadata?.startTime;
+          let responseTime = 0;
+          if (hasMetadata(response.config)) {
+            const configWithMetadata = response.config as AxiosRequestConfigWithMetadata;
+            responseTime = configWithMetadata.metadata?.endTime && configWithMetadata.metadata?.startTime 
+              ? configWithMetadata.metadata.endTime - configWithMetadata.metadata.startTime 
+              : 0;
+          }
           passed = responseTime <= validation.maxTime;
           message = passed
             ? `Response time ${responseTime}ms is within limit`
@@ -159,7 +198,8 @@ export class APITestingService {
 
         case 'json_schema':
           try {
-            passed = validateResponseSchema(response.data, validation.schema);
+            const validate = this.ajv.compile(validation.schema);
+            passed = validate(response.data);
             message = passed
               ? 'Response matches expected schema'
               : 'Response does not match expected schema';
@@ -222,7 +262,7 @@ export class APITestingService {
             break;
         }
       } catch (error) {
-        logger.warn('Data extraction failed', LogCategory.TEST_EXECUTION, {
+        logger.warn('Data extraction failed', LogCategory.API, {
           extractionName: extraction.name,
           error: error instanceof Error ? error.message : 'Unknown error'
         });
