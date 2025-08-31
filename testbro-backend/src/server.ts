@@ -49,6 +49,7 @@ import webhookRoutes from './routes/webhooks';
 import apiKeyRoutes from './routes/apiKeys';
 import performanceRoutes from './routes/performance';
 import browserControlRoutes from './routes/browserControl';
+import storageRoutes from './routes/storage';
 
 // Initialize Express app
 const app = express();
@@ -228,6 +229,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/api-keys', apiKeyRoutes);
 app.use('/api/performance', performanceRoutes);
 app.use('/api/browser-control', browserControlRoutes);
+app.use('/api/storage', storageRoutes);
 
 // WebSocket status endpoint
 app.get('/api/websocket/status', (_req, res) => {

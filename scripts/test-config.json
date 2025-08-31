@@ -1,0 +1,67 @@
+{
+  "testConfig": {
+    "backend": {
+      "url": "http://localhost:3001",
+      "healthEndpoint": "/health",
+      "apiPrefix": "/api"
+    },
+    "frontend": {
+      "url": "http://localhost:5173"
+    },
+    "database": {
+      "testUser": {
+        "email": "dbtest@serviceintegration.com",
+        "password": "TestPassword123!"
+      }
+    },
+    "timeouts": {
+      "serverStart": 30000,
+      "apiRequest": 10000,
+      "testExecution": 5000
+    },
+    "testSuites": {
+      "connectivity": {
+        "enabled": true,
+        "tests": [
+          "healthCheck",
+          "corsConfiguration",
+          "apiResponseFormat",
+          "rateLimiting"
+        ]
+      },
+      "database": {
+        "enabled": true,
+        "tests": [
+          "databaseConnection",
+          "organizationCrud",
+          "multiTenantIsolation",
+          "concurrentOperations"
+        ]
+      },
+      "authentication": {
+        "enabled": true,
+        "tests": [
+          "userRegistration",
+          "userLogin",
+          "jwtTokenValidation",
+          "protectedRouteAccess",
+          "defaultOrganizationCreation"
+        ]
+      },
+      "integration": {
+        "enabled": true,
+        "tests": [
+          "frontendBackendIntegration",
+          "completeUserJourney",
+          "errorHandlingConsistency"
+        ]
+      }
+    },
+    "reports": {
+      "outputPath": "./service-integration-report.json",
+      "includeTimestamps": true,
+      "includeDurations": true,
+      "verboseErrors": true
+    }
+  }
+}
