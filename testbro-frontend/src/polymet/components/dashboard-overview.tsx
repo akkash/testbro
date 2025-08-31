@@ -818,7 +818,7 @@ export default function DashboardOverview() {
         <CardContent>
           <CriticalIssuesFeed issues={metrics?.topIssues || []} />
         </CardContent>
-      </div>
+      </Card>
 
       {/* Browser Automation Highlights */}
       <Card>
