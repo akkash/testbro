@@ -1,7 +1,7 @@
 import request from 'supertest';
-import { app } from '../../src/server';
+import app from '../../src/server';
 import { supabaseAdmin } from '../../src/config/database';
-import { createMockUser, createMockOrganization, createMockProject } from '../setup';
+import { createMockUser, createMockProject } from '../setup';
 
 describe('Service Integration Tests', () => {
   let authToken: string;

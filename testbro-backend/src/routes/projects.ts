@@ -5,6 +5,7 @@ import { validate, validateParams, paramSchemas } from '../middleware/validation
 import { schemas } from '../middleware/validation';
 import { asyncHandler } from '../middleware/errorHandler';
 import { paginationService } from '../services/paginationService';
+import { APIResponse } from '../types';
 
 const router = express.Router();
 
@@ -103,24 +104,36 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     const totalItems = count || 0;
     const totalPages = Math.ceil(totalItems / paginationParams.limit);
 
-    return res.json({
+    const response: APIResponse<any[]> = {
       data: transformedProjects,
-      pagination: {
-        currentPage: paginationParams.page,
-        totalPages,
-        totalItems,
-        itemsPerPage: paginationParams.limit,
-        hasNextPage: paginationParams.page < totalPages,
-        hasPreviousPage: paginationParams.page > 1,
-        nextPage: paginationParams.page < totalPages ? paginationParams.page + 1 : null,
-        previousPage: paginationParams.page > 1 ? paginationParams.page - 1 : null,
-      },
       meta: {
+        pagination: {
+          currentPage: paginationParams.page,
+          totalPages,
+          totalItems,
+          itemsPerPage: paginationParams.limit,
+          hasNextPage: paginationParams.page < totalPages,
+          hasPreviousPage: paginationParams.page > 1,
+          nextPage: paginationParams.page < totalPages ? paginationParams.page + 1 : null,
+          previousPage: paginationParams.page > 1 ? paginationParams.page - 1 : null,
+          // Legacy compatibility
+          page: paginationParams.page,
+          limit: paginationParams.limit,
+          total: totalItems,
+          total_pages: totalPages
+        },
         sortField,
         sortOrder: sortDirection,
+        search: search as string,
+        filters: {
+          status
+        },
         executionTime: 0,
+        timestamp: new Date().toISOString()
       }
-    });
+    };
+
+    return res.json(response);
 
   } catch (error) {
     console.error('Projects fetch error:', error);
@@ -180,7 +193,14 @@ router.get('/:id', validateParams(paramSchemas.id), requireProjectAccess, asyncH
       organization_name: project.organizations?.name
     };
 
-    res.json({ data: enrichedProject });
+    const response: APIResponse<any> = {
+      data: enrichedProject,
+      meta: {
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    res.json(response);
 
   } catch (error) {
     console.error('Project fetch error:', error);

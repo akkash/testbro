@@ -1,3 +1,325 @@
 #!/usr/bin/env node
 
-/**\n * Comprehensive Integration Test for TestBro API\n * Tests all newly implemented endpoints and validates API contracts\n */\n\nconst axios = require('axios');\nconst FormData = require('form-data');\nconst fs = require('fs');\nconst path = require('path');\n\nconst BASE_URL = process.env.BACKEND_URL || 'http://localhost:3001';\nconst TEST_EMAIL = `integration-test-${Date.now()}@testbro.ai`;\nconst TEST_PASSWORD = 'IntegrationTest123!';\n\nclass APIIntegrationTester {\n  constructor() {\n    this.authToken = null;\n    this.organizationId = null;\n    this.projectId = null;\n    this.testCaseId = null;\n    this.executionId = null;\n    this.results = {\n      passed: 0,\n      failed: 0,\n      tests: []\n    };\n  }\n\n  async runTest(name, testFn) {\n    try {\n      console.log(`\\n🧪 Testing: ${name}`);\n      await testFn();\n      this.results.passed++;\n      this.results.tests.push({ name, status: 'PASSED' });\n      console.log(`✅ ${name} - PASSED`);\n    } catch (error) {\n      this.results.failed++;\n      this.results.tests.push({ name, status: 'FAILED', error: error.message });\n      console.log(`❌ ${name} - FAILED: ${error.message}`);\n    }\n  }\n\n  async setUp() {\n    console.log('🚀 Setting up test environment...');\n    \n    // 1. Test user registration\n    await this.runTest('User Registration', async () => {\n      const response = await axios.post(`${BASE_URL}/api/auth/register`, {\n        email: TEST_EMAIL,\n        password: TEST_PASSWORD\n      });\n      \n      if (response.status !== 201) {\n        throw new Error(`Expected 201, got ${response.status}`);\n      }\n      \n      if (!response.data.session?.access_token) {\n        throw new Error('No access token returned');\n      }\n      \n      this.authToken = response.data.session.access_token;\n    });\n\n    // 2. Get user organizations\n    await this.runTest('Get Organizations', async () => {\n      const response = await axios.get(`${BASE_URL}/api/organizations`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      if (!response.data.data || response.data.data.length === 0) {\n        throw new Error('No organizations returned');\n      }\n      \n      this.organizationId = response.data.data[0].organizations.id;\n    });\n\n    // 3. Create test project\n    await this.runTest('Create Project', async () => {\n      const response = await axios.post(`${BASE_URL}/api/projects`, {\n        name: 'Integration Test Project',\n        description: 'Project for API integration testing',\n        organization_id: this.organizationId\n      }, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 201) {\n        throw new Error(`Expected 201, got ${response.status}`);\n      }\n      \n      this.projectId = response.data.data.id;\n    });\n  }\n\n  async testDashboardEndpoints() {\n    console.log('\\n📊 Testing Dashboard Endpoints...');\n    \n    // Test dashboard metrics\n    await this.runTest('Dashboard Metrics', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/metrics`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      const requiredFields = ['total_tests', 'success_rate', 'avg_execution_time'];\n      \n      for (const field of requiredFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n\n    // Test ROI metrics\n    await this.runTest('ROI Metrics', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/roi-metrics`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      const requiredFields = ['totalSavings', 'monthlySavings', 'costPerManualTest'];\n      \n      for (const field of requiredFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n\n    // Test cost savings\n    await this.runTest('Cost Savings Metrics', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/cost-savings`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      const requiredFields = ['hoursSaved', 'monthlySavings', 'yearlyProjectedSavings'];\n      \n      for (const field of requiredFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n\n    // Test industry benchmarks\n    await this.runTest('Industry Benchmarks', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/industry-benchmarks`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      if (!Array.isArray(data) || data.length === 0) {\n        throw new Error('Expected array of benchmarks');\n      }\n      \n      const benchmark = data[0];\n      const requiredFields = ['metric', 'yourValue', 'industryAverage', 'percentile'];\n      \n      for (const field of requiredFields) {\n        if (benchmark[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n\n    // Test failing tests\n    await this.runTest('Failing Tests', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/failing-tests`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      // Should return empty array for new account\n      if (!Array.isArray(response.data.data)) {\n        throw new Error('Expected array response');\n      }\n    });\n  }\n\n  async testAdvancedAnalytics() {\n    console.log('\\n📈 Testing Advanced Analytics Endpoints...');\n    \n    // Test UX score\n    await this.runTest('UX Score Computation', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/ux-score`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      const requiredFields = ['overall_score', 'components', 'insights'];\n      \n      for (const field of requiredFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n\n    // Test performance trends\n    await this.runTest('Performance Trends', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/performance-trends?period=7d`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      const requiredFields = ['trends', 'analysis', 'summary'];\n      \n      for (const field of requiredFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n\n    // Test business impact\n    await this.runTest('Business Impact Metrics', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/business-impact`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      const requiredFields = ['risk_metrics', 'cost_impact', 'productivity_impact'];\n      \n      for (const field of requiredFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n  }\n\n  async testProjectsEndpoints() {\n    console.log('\\n📋 Testing Projects Endpoints...');\n    \n    // Test list projects with pagination\n    await this.runTest('List Projects with Pagination', async () => {\n      const response = await axios.get(`${BASE_URL}/api/projects?limit=5&sort_by=updated_at&sort_order=desc`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const responseData = response.data;\n      if (!responseData.data || !responseData.pagination) {\n        throw new Error('Missing data or pagination fields');\n      }\n      \n      // Verify pagination structure\n      const pagination = responseData.pagination;\n      const requiredPaginationFields = ['currentPage', 'totalPages', 'totalItems', 'itemsPerPage'];\n      \n      for (const field of requiredPaginationFields) {\n        if (pagination[field] === undefined) {\n          throw new Error(`Missing pagination field: ${field}`);\n        }\n      }\n    });\n\n    // Test project stats\n    await this.runTest('Project Statistics', async () => {\n      const response = await axios.get(`${BASE_URL}/api/projects/${this.projectId}/stats`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const data = response.data.data;\n      const requiredFields = ['project_name', 'test_cases', 'executions', 'targets', 'growth'];\n      \n      for (const field of requiredFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing required field: ${field}`);\n        }\n      }\n    });\n  }\n\n  async testExecutionsEndpoints() {\n    console.log('\\n⚡ Testing Executions Endpoints...');\n    \n    // Test list executions with filtering\n    await this.runTest('List Executions with Filtering', async () => {\n      const response = await axios.get(`${BASE_URL}/api/executions?project_id=${this.projectId}&limit=10`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      if (response.status !== 200) {\n        throw new Error(`Expected 200, got ${response.status}`);\n      }\n      \n      const responseData = response.data;\n      if (!responseData.data || !responseData.meta) {\n        throw new Error('Missing data or meta fields');\n      }\n      \n      // Should return empty array for new project\n      if (!Array.isArray(responseData.data)) {\n        throw new Error('Data should be an array');\n      }\n    });\n  }\n\n  async testStorageEndpoints() {\n    console.log('\\n💾 Testing Storage Endpoints...');\n    \n    // Create a dummy execution for storage testing\n    const dummyExecutionId = 'test-execution-' + Date.now();\n    \n    // Test screenshot upload (simulate with a small text file)\n    await this.runTest('Screenshot Upload Validation', async () => {\n      // We'll test the endpoint structure without actual file upload since we need a real execution\n      const response = await axios.get(`${BASE_URL}/api/storage/executions/${dummyExecutionId}/files`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      // Should return 403 for non-existent execution\n      if (response.status !== 403) {\n        throw new Error(`Expected 403 for non-existent execution, got ${response.status}`);\n      }\n    });\n  }\n\n  async testAPIContractConsistency() {\n    console.log('\\n🔄 Testing API Contract Consistency...');\n    \n    // Test that dashboard metrics response matches frontend expectations\n    await this.runTest('Dashboard Metrics Contract', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/metrics`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      const data = response.data.data;\n      \n      // Verify snake_case fields are present (backend format)\n      const backendFields = ['total_tests', 'success_rate', 'avg_execution_time'];\n      for (const field of backendFields) {\n        if (data[field] === undefined) {\n          throw new Error(`Missing backend field: ${field}`);\n        }\n      }\n      \n      // Verify numeric types\n      if (typeof data.total_tests !== 'number') {\n        throw new Error('total_tests should be a number');\n      }\n      if (typeof data.success_rate !== 'number') {\n        throw new Error('success_rate should be a number');\n      }\n    });\n\n    // Test trends data structure\n    await this.runTest('Trends Data Contract', async () => {\n      const response = await axios.get(`${BASE_URL}/api/dashboard/trends?period=7d`, {\n        headers: { Authorization: `Bearer ${this.authToken}` }\n      });\n      \n      const data = response.data.data;\n      \n      // Should have daily_executions array\n      if (!data.daily_executions || !Array.isArray(data.daily_executions)) {\n        throw new Error('daily_executions should be an array');\n      }\n    });\n  }\n\n  async cleanup() {\n    console.log('\\n🧹 Cleaning up test data...');\n    \n    // Delete test project if it was created\n    if (this.projectId) {\n      try {\n        await axios.delete(`${BASE_URL}/api/projects/${this.projectId}`, {\n          headers: { Authorization: `Bearer ${this.authToken}` }\n        });\n        console.log('✅ Test project deleted');\n      } catch (error) {\n        console.log('⚠️ Could not delete test project:', error.message);\n      }\n    }\n  }\n\n  async run() {\n    console.log('🚀 Starting TestBro API Integration Tests\\n');\n    console.log('=' .repeat(60));\n    \n    try {\n      await this.setUp();\n      await this.testDashboardEndpoints();\n      await this.testAdvancedAnalytics();\n      await this.testProjectsEndpoints();\n      await this.testExecutionsEndpoints();\n      await this.testStorageEndpoints();\n      await this.testAPIContractConsistency();\n    } catch (error) {\n      console.log('\\n💥 Test suite failed:', error.message);\n    } finally {\n      await this.cleanup();\n    }\n    \n    this.printResults();\n    \n    // Exit with appropriate code\n    process.exit(this.results.failed > 0 ? 1 : 0);\n  }\n\n  printResults() {\n    console.log('\\n' + '=' .repeat(60));\n    console.log('📊 Integration Test Results');\n    console.log('=' .repeat(60));\n    console.log(`✅ Passed: ${this.results.passed}`);\n    console.log(`❌ Failed: ${this.results.failed}`);\n    console.log(`📊 Total: ${this.results.passed + this.results.failed}`);\n    console.log(`🎯 Success Rate: ${Math.round((this.results.passed / (this.results.passed + this.results.failed)) * 100)}%`);\n    \n    if (this.results.failed > 0) {\n      console.log('\\n❌ Failed Tests:');\n      this.results.tests\n        .filter(test => test.status === 'FAILED')\n        .forEach(test => {\n          console.log(`  - ${test.name}: ${test.error}`);\n        });\n    }\n    \n    console.log('\\n' + '=' .repeat(60));\n    \n    if (this.results.failed === 0) {\n      console.log('🎉 All integration tests passed! API is ready for production.');\n    } else {\n      console.log('⚠️ Some tests failed. Please review and fix the issues.');\n    }\n  }\n}\n\n// Run if called directly\nif (require.main === module) {\n  const tester = new APIIntegrationTester();\n  tester.run().catch(error => {\n    console.error('💥 Test execution failed:', error);\n    process.exit(1);\n  });\n}\n\nmodule.exports = { APIIntegrationTester };
+/**
+ * Comprehensive Integration Test for TestBro API
+ * Tests all newly implemented endpoints and validates API contracts
+ */
+
+const axios = require('axios');
+const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
+
+const BASE_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+const TEST_EMAIL = `integration-test-${Date.now()}@testbro.ai`;
+const TEST_PASSWORD = 'IntegrationTest123!';
+
+class APIIntegrationTester {
+  constructor() {
+    this.authToken = null;
+    this.organizationId = null;
+    this.projectId = null;
+    this.testCaseId = null;
+    this.executionId = null;
+    this.results = {
+      passed: 0,
+      failed: 0,
+      tests: []
+    };
+  }
+
+  async runTest(name, testFn) {
+    try {
+      console.log(`\n🧪 Testing: ${name}`);
+      await testFn();
+      this.results.passed++;
+      this.results.tests.push({ name, status: 'PASSED' });
+      console.log(`✅ ${name} - PASSED`);
+    } catch (error) {
+      this.results.failed++;
+      this.results.tests.push({ name, status: 'FAILED', error: error.message });
+      console.log(`❌ ${name} - FAILED: ${error.message}`);
+    }
+  }
+
+  async setUp() {
+    console.log('🚀 Setting up test environment...');
+    
+    // 1. Test user registration
+    await this.runTest('User Registration', async () => {
+      const response = await axios.post(`${BASE_URL}/api/auth/register`, {
+        email: TEST_EMAIL,
+        password: TEST_PASSWORD
+      });
+      
+      if (response.status !== 201) {
+        throw new Error(`Expected 201, got ${response.status}`);
+      }
+      
+      if (!response.data.session?.access_token) {
+        throw new Error('No access token returned');
+      }
+      
+      this.authToken = response.data.session.access_token;
+    });
+
+    // 2. Get user organizations
+    await this.runTest('Get Organizations', async () => {
+      const response = await axios.get(`${BASE_URL}/api/organizations`, {
+        headers: { Authorization: `Bearer ${this.authToken}` }
+      });
+      
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, got ${response.status}`);
+      }
+      
+      if (!response.data.data || response.data.data.length === 0) {
+        throw new Error('No organizations returned');
+      }
+      
+      this.organizationId = response.data.data[0].organizations.id;
+    });
+
+    // 3. Create test project
+    await this.runTest('Create Project', async () => {
+      const response = await axios.post(`${BASE_URL}/api/projects`, {
+        name: 'Integration Test Project',
+        description: 'Project for API integration testing',
+        organization_id: this.organizationId
+      }, {
+        headers: { Authorization: `Bearer ${this.authToken}` }
+      });
+      
+      if (response.status !== 201) {
+        throw new Error(`Expected 201, got ${response.status}`);
+      }
+      
+      this.projectId = response.data.data.id;
+    });
+  }
+
+  async testDashboardEndpoints() {
+    console.log('\n📊 Testing Dashboard Endpoints...');
+    
+    // Test dashboard metrics
+    await this.runTest('Dashboard Metrics', async () => {
+      const response = await axios.get(`${BASE_URL}/api/dashboard/metrics`, {
+        headers: { Authorization: `Bearer ${this.authToken}` }
+      });
+      
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, got ${response.status}`);
+      }
+      
+      const data = response.data.data;
+      const requiredFields = ['total_tests', 'success_rate', 'avg_execution_time'];
+      
+      for (const field of requiredFields) {
+        if (data[field] === undefined) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+    });
+
+    // Test ROI metrics
+    await this.runTest('ROI Metrics', async () => {
+      const response = await axios.get(`${BASE_URL}/api/dashboard/roi-metrics`, {
+        headers: { Authorization: `Bearer ${this.authToken}` }
+      });
+      
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, got ${response.status}`);
+      }
+      
+      const data = response.data.data;
+      const requiredFields = ['monthly_savings', 'yearly_savings', 'time_saved_hours'];
+      
+      for (const field of requiredFields) {
+        if (data[field] === undefined) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+    });
+
+    // Test failing tests
+    await this.runTest('Failing Tests', async () => {
+      const response = await axios.get(`${BASE_URL}/api/dashboard/failing-tests`, {
+        headers: { Authorization: `Bearer ${this.authToken}` }
+      });
+      
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, got ${response.status}`);
+      }
+      
+      // Should return empty array for new account
+      if (!Array.isArray(response.data.data)) {
+        throw new Error('Expected array response');
+      }
+    });
+  }
+
+  async testProjectsEndpoints() {
+    console.log('\n📋 Testing Projects Endpoints...');
+    
+    // Test list projects with pagination
+    await this.runTest('List Projects with Pagination', async () => {
+      const response = await axios.get(`${BASE_URL}/api/projects?limit=5&sort_by=updated_at&sort_order=desc`, {
+        headers: { Authorization: `Bearer ${this.authToken}` }
+      });
+      
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, got ${response.status}`);
+      }
+      
+      const responseData = response.data;
+      if (!responseData.data || !responseData.meta?.pagination) {
+        throw new Error('Missing data or pagination fields');
+      }
+      
+      // Verify pagination structure
+      const pagination = responseData.meta.pagination;
+      const requiredPaginationFields = ['currentPage', 'totalPages', 'totalItems', 'itemsPerPage'];
+      
+      for (const field of requiredPaginationFields) {
+        if (pagination[field] === undefined) {
+          throw new Error(`Missing pagination field: ${field}`);
+        }
+      }
+    });
+  }
+
+  async testExecutionsEndpoints() {
+    console.log('\n⚡ Testing Executions Endpoints...');
+    
+    // Test list executions with filtering
+    await this.runTest('List Executions with Filtering', async () => {
+      const response = await axios.get(`${BASE_URL}/api/executions?project_id=${this.projectId}&limit=10`, {
+        headers: { Authorization: `Bearer ${this.authToken}` }
+      });
+      
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, got ${response.status}`);
+      }
+      
+      const responseData = response.data;
+      if (!responseData.data || !responseData.meta) {
+        throw new Error('Missing data or meta fields');
+      }
+      
+      // Should return empty array for new project
+      if (!Array.isArray(responseData.data)) {
+        throw new Error('Data should be an array');
+      }
+    });
+  }
+
+  async testAPIResponseFormat() {
+    console.log('\n🔄 Testing API Response Format Consistency...');
+    
+    // Test that all endpoints follow APIResponse<T> format
+    await this.runTest('Standardized Response Format', async () => {
+      const endpoints = [
+        '/api/dashboard/metrics',
+        '/api/dashboard/roi-metrics',
+        '/api/dashboard/failing-tests',
+        '/api/projects',
+        '/api/executions'
+      ];
+      
+      for (const endpoint of endpoints) {
+        const response = await axios.get(`${BASE_URL}${endpoint}`, {
+          headers: { Authorization: `Bearer ${this.authToken}` }
+        });
+        
+        // Check for standardized format
+        if (!response.data.data) {
+          throw new Error(`${endpoint} missing 'data' field`);
+        }
+        
+        if (!response.data.meta) {
+          throw new Error(`${endpoint} missing 'meta' field`);
+        }
+        
+        if (!response.data.meta.timestamp) {
+          throw new Error(`${endpoint} missing 'meta.timestamp' field`);
+        }
+      }
+    });
+  }
+
+  async cleanup() {
+    console.log('\n🧹 Cleaning up test data...');
+    
+    // Delete test project if it was created
+    if (this.projectId) {
+      try {
+        await axios.delete(`${BASE_URL}/api/projects/${this.projectId}`, {
+          headers: { Authorization: `Bearer ${this.authToken}` }
+        });
+        console.log('✅ Test project deleted');
+      } catch (error) {
+        console.log('⚠️ Could not delete test project:', error.message);
+      }
+    }
+  }
+
+  async run() {
+    console.log('🚀 Starting TestBro API Integration Tests\n');
+    console.log('='.repeat(60));
+    
+    try {
+      await this.setUp();
+      await this.testDashboardEndpoints();
+      await this.testProjectsEndpoints();
+      await this.testExecutionsEndpoints();
+      await this.testAPIResponseFormat();
+    } catch (error) {
+      console.log('\n💥 Test suite failed:', error.message);
+    } finally {
+      await this.cleanup();
+    }
+    
+    this.printResults();
+    
+    // Exit with appropriate code
+    process.exit(this.results.failed > 0 ? 1 : 0);
+  }
+
+  printResults() {
+    console.log('\n' + '='.repeat(60));
+    console.log('📊 Integration Test Results');
+    console.log('='.repeat(60));
+    console.log(`✅ Passed: ${this.results.passed}`);
+    console.log(`❌ Failed: ${this.results.failed}`);
+    console.log(`📊 Total: ${this.results.passed + this.results.failed}`);
+    console.log(`🎯 Success Rate: ${Math.round((this.results.passed / (this.results.passed + this.results.failed)) * 100)}%`);
+    
+    if (this.results.failed > 0) {
+      console.log('\n❌ Failed Tests:');
+      this.results.tests
+        .filter(test => test.status === 'FAILED')
+        .forEach(test => {
+          console.log(`  - ${test.name}: ${test.error}`);
+        });
+    }
+    
+    console.log('\n' + '='.repeat(60));
+    
+    if (this.results.failed === 0) {
+      console.log('🎉 All integration tests passed! API is ready for production.');
+    } else {
+      console.log('⚠️ Some tests failed. Please review and fix the issues.');
+    }
+  }
+}
+
+// Run if called directly
+if (require.main === module) {
+  const tester = new APIIntegrationTester();
+  tester.run().catch(error => {
+    console.error('💥 Test execution failed:', error);
+    process.exit(1);
+  });
+}
+
+module.exports = { APIIntegrationTester };

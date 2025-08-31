@@ -99,6 +99,22 @@ export const createMockUser = (overrides: Partial<any> = {}) => ({
   ...overrides,
 });
 
+export const createMockOrganization = (overrides: Partial<any> = {}) => ({
+  id: 'org-123',
+  name: 'Test Organization',
+  description: 'A test organization',
+  owner_id: 'user-123',
+  settings: {
+    max_users: 10,
+    max_projects: 100,
+    max_tests_per_month: 10000,
+    features: ['basic_testing', 'ai_generation', 'integrations'],
+  },
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+  ...overrides,
+});
+
 export const createMockProject = (overrides: Partial<any> = {}) => ({
   id: 'project-123',
   name: 'Test Project',

@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import multer from 'multer';
 import { supabaseAdmin, TABLES } from '../config/database';
 import { authenticate, requireProjectAccess } from '../middleware/auth';
 import { validate, validateParams, paramSchemas } from '../middleware/validation';
@@ -7,9 +8,25 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { queueService } from '../services/queueService';
 import { getWebSocketService } from '../services/websocketService';
 import { testExecutionService } from '../services/testExecutionService';
-import { ExecuteTestRequest } from '../types';
+import { ExecuteTestRequest, APIResponse } from '../types';
 
 const router = express.Router();
+
+// Configure multer for screenshot uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit for screenshots
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(null, false);
+    }
+  }
+});
 
 // Apply authentication to all routes (supports both JWT and API key)
 router.use(authenticate);
@@ -125,11 +142,18 @@ router.post('/', validate(schemas.executeTest), requireProjectAccess, asyncHandl
       });
     }
 
-    res.status(202).json({
-      execution_id: executionId,
-      message: 'Test execution queued successfully',
-      status: 'queued',
-    });
+    const response: APIResponse<any> = {
+      data: {
+        execution_id: executionId,
+        message: 'Test execution queued successfully',
+        status: 'queued'
+      },
+      meta: {
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    res.status(202).json(response);
 
   } catch (error) {
     console.error('Failed to queue test execution:', error);
@@ -211,7 +235,14 @@ router.get('/:id', validateParams(paramSchemas.id), asyncHandler(async (req: Req
     });
   }
 
-  res.json({ data: execution });
+  const response: APIResponse<any> = {
+    data: execution,
+    meta: {
+      timestamp: new Date().toISOString()
+    }
+  };
+
+  res.json(response);
 }));
 
 /**
@@ -262,7 +293,14 @@ router.get('/:id/status', validateParams(paramSchemas.id), asyncHandler(async (r
       });
     }
 
-    res.json({ data: status });
+    const response: APIResponse<any> = {
+      data: status,
+      meta: {
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    res.json(response);
 
   } catch (error) {
     console.error('Failed to get execution status:', error);
@@ -356,7 +394,15 @@ router.get('/:id/screenshots', validateParams(paramSchemas.id), asyncHandler(asy
       url: log.metadata.screenshot_url,
     })) || [];
 
-  res.json({ data: screenshotUrls });
+  const response: APIResponse<any[]> = {
+    data: screenshotUrls,
+    meta: {
+      timestamp: new Date().toISOString(),
+      count: screenshotUrls.length
+    }
+  };
+
+  res.json(response);
 }));
 
 /**
@@ -579,16 +625,152 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
-    data: executions,
+  // Return paginated results
+  const response: APIResponse<any[]> = {
+    data: executions || [],
     meta: {
-      page: parseInt(page as string),
-      limit: parseInt(limit as string),
-      total: count,
-      total_pages: Math.ceil((count || 0) / parseInt(limit as string)),
+      pagination: {
+        currentPage: parseInt(page as string),
+        totalPages: Math.ceil((count || 0) / parseInt(limit as string)),
+        totalItems: count || 0,
+        itemsPerPage: parseInt(limit as string),
+        hasNextPage: parseInt(page as string) < Math.ceil((count || 0) / parseInt(limit as string)),
+        hasPreviousPage: parseInt(page as string) > 1,
+        nextPage: parseInt(page as string) < Math.ceil((count || 0) / parseInt(limit as string)) ? parseInt(page as string) + 1 : null,
+        previousPage: parseInt(page as string) > 1 ? parseInt(page as string) - 1 : null,
+        // Legacy compatibility
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        total: count || 0,
+        total_pages: Math.ceil((count || 0) / parseInt(limit as string))
+      },
+      filters: {
+        status: status as string,
+        project_id: project_id as string,
+        date_from: date_from as string,
+        date_to: date_to as string
+      },
+      timestamp: new Date().toISOString()
     },
-  });
+  };
+
+  res.json(response);
 }));
+
+/**
+ * POST /api/executions/:id/screenshot
+ * Upload screenshot for a specific execution step
+ */
+router.post('/:id/screenshot', 
+  validateParams(paramSchemas.id),
+  upload.single('screenshot'), 
+  asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user!.id;
+    const { step_id, step_order, timestamp, description } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'No screenshot file provided',
+      });
+    }
+
+    try {
+      // Verify user has access to this execution
+      const { data: execution, error: execError } = await supabaseAdmin
+        .from(TABLES.TEST_EXECUTIONS)
+        .select(`
+          id,
+          project_id,
+          projects (
+            organization_id,
+            organization_members!inner (
+              user_id
+            )
+          )
+        `)
+        .eq('id', id)
+        .eq('projects.organization_members.user_id', userId)
+        .single();
+
+      if (execError || !execution) {
+        return res.status(403).json({
+          error: 'FORBIDDEN',
+          message: 'Access denied to this execution',
+        });
+      }
+
+      // Upload to Supabase Storage
+      const screenshotUrl = await uploadToSupabaseStorage(req.file, {
+        execution_id: id,
+        step_id,
+        userId,
+        timestamp: timestamp || new Date().toISOString()
+      });
+
+      // Store screenshot metadata in database
+      const { error: logError } = await supabaseAdmin
+        .from('execution_logs')
+        .insert({
+          execution_id: id,
+          step_id: step_id || null,
+          level: 'info',
+          message: description || 'Screenshot captured',
+          timestamp: timestamp || new Date().toISOString(),
+          metadata: {
+            screenshot_url: screenshotUrl,
+            file_size: req.file.size,
+            content_type: req.file.mimetype,
+            step_order: step_order || null
+          }
+        });
+
+      if (logError) {
+        console.error('Screenshot metadata logging error:', logError);
+      }
+
+      // Emit WebSocket event for real-time updates
+      const wsService = getWebSocketService();
+      if (wsService) {
+        wsService.emitExecutionEvent({
+          type: 'screenshot',
+          execution_id: id,
+          data: {
+            screenshot_url: screenshotUrl,
+            step_id,
+            step_order,
+            timestamp: timestamp || new Date().toISOString()
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const response: APIResponse<any> = {
+        data: {
+          screenshot_url: screenshotUrl,
+          execution_id: id,
+          step_id,
+          step_order,
+          file_size: req.file.size,
+          uploaded_at: new Date().toISOString()
+        },
+        meta: {
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      res.status(201).json(response);
+
+    } catch (error) {
+      console.error('Screenshot upload error:', error);
+      res.status(500).json({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to upload screenshot',
+      });
+    }
+  })
+);
 
 /**
  * Helper function to get test target
@@ -606,6 +788,54 @@ async function getTestTarget(targetId: string) {
   }
 
   return target;
+}
+
+/**
+ * Helper function to upload file to Supabase Storage
+ */
+async function uploadToSupabaseStorage(
+  file: any, // Use any to avoid type conflicts
+  metadata: {
+    execution_id: string;
+    step_id?: string;
+    userId: string;
+    timestamp: string;
+  }
+): Promise<string> {
+  try {
+    // Generate unique filename
+    const fileExtension = file.originalname.split('.').pop() || 'png';
+    const fileName = `screenshots/${metadata.execution_id}/${metadata.step_id || 'step'}-${Date.now()}.${fileExtension}`;
+
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+      .from('test-artifacts')
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        metadata: {
+          execution_id: metadata.execution_id,
+          step_id: metadata.step_id || null,
+          uploaded_by: metadata.userId,
+          original_name: file.originalname,
+          timestamp: metadata.timestamp
+        }
+      });
+
+    if (uploadError) {
+      console.error('Supabase storage upload error:', uploadError);
+      throw new Error('Failed to upload to storage');
+    }
+
+    // Get public URL
+    const { data: urlData } = supabaseAdmin.storage
+      .from('test-artifacts')
+      .getPublicUrl(fileName);
+
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error('Storage upload error:', error);
+    throw error;
+  }
 }
 
 export default router;

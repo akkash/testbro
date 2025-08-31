@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { supabaseAdmin, TABLES } from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { APIResponse } from '../types';
 
 const router = express.Router();
 
@@ -42,10 +43,24 @@ router.get('/metrics', asyncHandler(async (req: Request, res: Response) => {
       console.error('Metrics error:', metricsError);
       // Fallback: calculate metrics manually
       const fallbackMetrics = await calculateFallbackMetrics(organizationIds, userId);
-      return res.json({ data: fallbackMetrics });
+      const response: APIResponse<any> = {
+        data: fallbackMetrics,
+        meta: {
+          timestamp: new Date().toISOString(),
+          fallback: true
+        }
+      };
+      return res.json(response);
     }
 
-    res.json({ data: metrics });
+    const response: APIResponse<any> = {
+      data: metrics,
+      meta: {
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    res.json(response);
 
   } catch (error) {
     console.error('Dashboard metrics error:', error);
@@ -144,7 +159,15 @@ router.get('/recent-activity', asyncHandler(async (req: Request, res: Response) 
     ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
      .slice(0, parseInt(limit as string));
 
-    res.json({ data: activities });
+    const response: APIResponse<any[]> = {
+      data: activities,
+      meta: {
+        timestamp: new Date().toISOString(),
+        limit: parseInt(limit as string)
+      }
+    };
+
+    res.json(response);
 
   } catch (error) {
     console.error('Recent activity error:', error);
@@ -191,10 +214,26 @@ router.get('/trends', asyncHandler(async (req: Request, res: Response) => {
       console.error('Trends error:', trendsError);
       // Fallback: calculate trends manually
       const fallbackTrends = await calculateFallbackTrends(organizationIds, dateFrom);
-      return res.json({ data: fallbackTrends });
+      const response: APIResponse<any> = {
+        data: fallbackTrends,
+        meta: {
+          timestamp: new Date().toISOString(),
+          period: period as string,
+          fallback: true
+        }
+      };
+      return res.json(response);
     }
 
-    res.json({ data: trends });
+    const response: APIResponse<any> = {
+      data: trends,
+      meta: {
+        timestamp: new Date().toISOString(),
+        period: period as string
+      }
+    };
+
+    res.json(response);
 
   } catch (error) {
     console.error('Trends error:', error);
@@ -230,18 +269,116 @@ router.get('/health', asyncHandler(async (req: Request, res: Response) => {
       console.error('Usage metrics error:', usageError);
     }
 
-    res.json({
+    const response: APIResponse<any> = {
       data: {
         health,
         usage: usage || {},
       },
-    });
+      meta: {
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    res.json(response);
 
   } catch (error) {
     console.error('Health check error:', error);
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: 'Failed to fetch health metrics',
+    });
+  }
+}));
+
+/**
+ * GET /api/dashboard/roi-metrics
+ * Get ROI metrics and business impact calculations
+ */
+router.get('/roi-metrics', asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { period = '30d' } = req.query;
+
+  try {
+    // Get user's organizations
+    const { data: memberships, error: membershipError } = await supabaseAdmin
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId);
+
+    if (membershipError || !memberships) {
+      return res.status(500).json({
+        error: 'DATABASE_ERROR',
+        message: 'Failed to fetch user organizations',
+      });
+    }
+
+    const organizationIds = memberships.map(m => m.organization_id);
+    const dateFrom = getDateFromPeriod(period as string);
+
+    const roiMetrics = await calculateROIMetrics(organizationIds, userId, dateFrom);
+
+    const response: APIResponse<any> = {
+      data: roiMetrics,
+      meta: {
+        timestamp: new Date().toISOString(),
+        period: period as string,
+      },
+    };
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('ROI metrics error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to fetch ROI metrics',
+    });
+  }
+}));
+
+/**
+ * GET /api/dashboard/failing-tests
+ * Get top failing tests with failure analysis
+ */
+router.get('/failing-tests', asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { limit = 10, period = '30d' } = req.query;
+
+  try {
+    // Get user's organizations
+    const { data: memberships, error: membershipError } = await supabaseAdmin
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId);
+
+    if (membershipError || !memberships) {
+      return res.status(500).json({
+        error: 'DATABASE_ERROR',
+        message: 'Failed to fetch user organizations',
+      });
+    }
+
+    const organizationIds = memberships.map(m => m.organization_id);
+    const dateFrom = getDateFromPeriod(period as string);
+
+    const failingTests = await getTopFailingTests(organizationIds, userId, dateFrom, parseInt(limit as string));
+
+    const response: APIResponse<any> = {
+      data: failingTests,
+      meta: {
+        timestamp: new Date().toISOString(),
+        period: period as string,
+        limit: parseInt(limit as string),
+      },
+    };
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('Failing tests error:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to fetch failing tests',
     });
   }
 }));
@@ -1431,6 +1568,279 @@ function generatePriorityActions(riskMetrics: any): string[] {
   }
   
   return actions;
+}
+
+/**
+ * Calculate ROI metrics and business impact
+ */
+async function calculateROIMetrics(organizationIds: string[], userId: string, dateFrom: string) {
+  try {
+    // Get user's projects
+    const { data: projects, error: projectsError } = await supabaseAdmin
+      .from(TABLES.PROJECTS)
+      .select('id, name')
+      .in('organization_id', organizationIds);
+
+    if (projectsError || !projects) {
+      return getDefaultROIMetrics();
+    }
+
+    const projectIds = projects.map(p => p.id);
+
+    // Get execution data
+    const { data: executions, error: execError } = await supabaseAdmin
+      .from(TABLES.TEST_EXECUTIONS)
+      .select('id, status, duration_seconds, started_at')
+      .in('project_id', projectIds)
+      .gte('started_at', dateFrom);
+
+    if (execError) {
+      return getDefaultROIMetrics();
+    }
+
+    const totalExecutions = executions?.length || 0;
+    const successfulExecutions = executions?.filter(e => e.status === 'completed').length || 0;
+    const avgExecutionTime = executions?.length > 0 ? 
+      executions.reduce((sum, e) => sum + (e.duration_seconds || 0), 0) / executions.length : 0;
+
+    // Calculate ROI metrics
+    const manualTestingCostPerHour = 50; // Average QA engineer cost
+    const automationTimePerTest = avgExecutionTime / 60; // Convert to minutes
+    const manualTimePerTest = 30; // Average 30 minutes per manual test
+    
+    const timeSavedPerExecution = Math.max(0, manualTimePerTest - automationTimePerTest);
+    const totalTimeSavedHours = (totalExecutions * timeSavedPerExecution) / 60;
+    const monthlySavings = totalTimeSavedHours * manualTestingCostPerHour;
+    const yearlySavings = monthlySavings * 12;
+
+    // Calculate issues prevented (estimated based on failure rate)
+    const failureRate = totalExecutions > 0 ? 
+      ((totalExecutions - successfulExecutions) / totalExecutions) * 100 : 0;
+    const estimatedIssuesPrevented = Math.floor(totalExecutions * 0.1); // 10% issue prevention rate
+    const costPerBugInProduction = 500; // Average cost per production bug
+    const issuePreventionValue = estimatedIssuesPrevented * costPerBugInProduction;
+
+    return {
+      monthly_savings: Math.round(monthlySavings),
+      yearly_savings: Math.round(yearlySavings),
+      time_saved_hours: Math.round(totalTimeSavedHours),
+      tests_automated: totalExecutions,
+      manual_test_cost: Math.round(totalExecutions * (manualTimePerTest / 60) * manualTestingCostPerHour),
+      automation_cost: Math.round(totalExecutions * (automationTimePerTest / 60) * 25), // Lower cost for automated
+      roi_percentage: monthlySavings > 0 ? Math.round(((monthlySavings - 1000) / 1000) * 100) : 0, // Assuming $1000 setup cost
+      issues_prevented: estimatedIssuesPrevented,
+      issue_prevention_value: Math.round(issuePreventionValue),
+      payback_period_months: monthlySavings > 0 ? Math.ceil(5000 / monthlySavings) : 12, // $5000 setup cost
+      execution_efficiency: Math.round((successfulExecutions / Math.max(1, totalExecutions)) * 100),
+      coverage_improvement: Math.round(Math.min(100, (totalExecutions / 100) * 25)), // Simplified coverage calc
+      business_impact: {
+        risk_reduction: Math.round(100 - failureRate),
+        quality_score: Math.round((successfulExecutions / Math.max(1, totalExecutions)) * 100),
+        confidence_level: totalExecutions > 50 ? 'high' : totalExecutions > 20 ? 'medium' : 'low'
+      }
+    };
+  } catch (error) {
+    console.error('ROI calculation error:', error);
+    return getDefaultROIMetrics();
+  }
+}
+
+/**
+ * Get top failing tests with analysis
+ */
+async function getTopFailingTests(organizationIds: string[], userId: string, dateFrom: string, limit: number) {
+  try {
+    // Get user's projects
+    const { data: projects, error: projectsError } = await supabaseAdmin
+      .from(TABLES.PROJECTS)
+      .select('id, name')
+      .in('organization_id', organizationIds);
+
+    if (projectsError || !projects) {
+      return [];
+    }
+
+    const projectIds = projects.map(p => p.id);
+
+    // Get failed executions with test case details
+    const { data: failedExecutions, error: execError } = await supabaseAdmin
+      .from(TABLES.TEST_EXECUTIONS)
+      .select(`
+        id,
+        test_case_id,
+        status,
+        error_message,
+        started_at,
+        duration_seconds,
+        test_cases (
+          id,
+          name,
+          priority,
+          project_id
+        ),
+        projects (
+          id,
+          name
+        )
+      `)
+      .in('project_id', projectIds)
+      .gte('started_at', dateFrom)
+      .eq('status', 'failed')
+      .order('started_at', { ascending: false });
+
+    if (execError || !failedExecutions) {
+      return [];
+    }
+
+    // Group by test case and calculate failure metrics
+    const testFailureMap = new Map();
+
+    failedExecutions.forEach(execution => {
+      const testCaseId = execution.test_case_id;
+      if (!testCaseId || !execution.test_cases) return;
+
+      if (!testFailureMap.has(testCaseId)) {
+        testFailureMap.set(testCaseId, {
+          test_case: execution.test_cases,
+          project: execution.projects,
+          failure_count: 0,
+          total_executions: 0,
+          last_failure: execution.started_at,
+          error_messages: [],
+          avg_duration: 0,
+          business_impact: 'medium'
+        });
+      }
+
+      const testData = testFailureMap.get(testCaseId);
+      testData.failure_count++;
+      testData.error_messages.push(execution.error_message);
+      
+      if (new Date(execution.started_at) > new Date(testData.last_failure)) {
+        testData.last_failure = execution.started_at;
+      }
+    });
+
+    // Get total execution counts for each test case
+    for (const [testCaseId, testData] of testFailureMap.entries()) {
+      const { data: totalExecs, error } = await supabaseAdmin
+        .from(TABLES.TEST_EXECUTIONS)
+        .select('id, duration_seconds', { count: 'exact' })
+        .eq('test_case_id', testCaseId)
+        .gte('started_at', dateFrom);
+
+      if (!error && totalExecs) {
+        testData.total_executions = totalExecs.length;
+        testData.failure_rate = (testData.failure_count / Math.max(1, testData.total_executions)) * 100;
+        testData.avg_duration = totalExecs.length > 0 ? 
+          totalExecs.reduce((sum, e) => sum + (e.duration_seconds || 0), 0) / totalExecs.length : 0;
+        
+        // Determine business impact based on priority and failure rate
+        const priority = testData.test_case.priority;
+        const failureRate = testData.failure_rate;
+        
+        if (priority === 'critical' && failureRate > 50) {
+          testData.business_impact = 'high';
+        } else if (priority === 'high' && failureRate > 30) {
+          testData.business_impact = 'high';
+        } else if (failureRate > 70) {
+          testData.business_impact = 'high';
+        } else if (failureRate > 40) {
+          testData.business_impact = 'medium';
+        } else {
+          testData.business_impact = 'low';
+        }
+      }
+    }
+
+    // Sort by failure rate and business impact
+    const sortedTests = Array.from(testFailureMap.values())
+      .sort((a, b) => {
+        // First sort by business impact
+        const impactOrder = { high: 3, medium: 2, low: 1 };
+        if (impactOrder[a.business_impact] !== impactOrder[b.business_impact]) {
+          return impactOrder[b.business_impact] - impactOrder[a.business_impact];
+        }
+        // Then by failure rate
+        return (b.failure_rate || 0) - (a.failure_rate || 0);
+      })
+      .slice(0, limit)
+      .map(test => ({
+        test_case_id: test.test_case.id,
+        test_name: test.test_case.name,
+        project_name: test.project?.name || 'Unknown',
+        priority: test.test_case.priority,
+        failure_count: test.failure_count,
+        total_executions: test.total_executions,
+        failure_rate: Math.round(test.failure_rate || 0),
+        last_failure: test.last_failure,
+        business_impact: test.business_impact,
+        avg_duration_seconds: Math.round(test.avg_duration),
+        common_errors: [...new Set(test.error_messages.filter(Boolean))].slice(0, 3),
+        suggested_actions: generateFailureActions(test)
+      }));
+
+    return sortedTests;
+  } catch (error) {
+    console.error('Failing tests calculation error:', error);
+    return [];
+  }
+}
+
+/**
+ * Generate suggested actions for failing tests
+ */
+function generateFailureActions(testData: any): string[] {
+  const actions = [];
+  const failureRate = testData.failure_rate || 0;
+  const businessImpact = testData.business_impact;
+  
+  if (businessImpact === 'high') {
+    actions.push('Immediate investigation required');
+  }
+  
+  if (failureRate > 70) {
+    actions.push('Review test logic and selectors');
+  }
+  
+  if (failureRate > 40 && failureRate <= 70) {
+    actions.push('Check for timing issues and improve waits');
+  }
+  
+  if (testData.error_messages.some(msg => msg?.includes('timeout'))) {
+    actions.push('Increase timeout values');
+  }
+  
+  if (testData.error_messages.some(msg => msg?.includes('element'))) {
+    actions.push('Update element selectors');
+  }
+  
+  return actions;
+}
+
+/**
+ * Get default ROI metrics for fallback
+ */
+function getDefaultROIMetrics() {
+  return {
+    monthly_savings: 0,
+    yearly_savings: 0,
+    time_saved_hours: 0,
+    tests_automated: 0,
+    manual_test_cost: 0,
+    automation_cost: 0,
+    roi_percentage: 0,
+    issues_prevented: 0,
+    issue_prevention_value: 0,
+    payback_period_months: 12,
+    execution_efficiency: 0,
+    coverage_improvement: 0,
+    business_impact: {
+      risk_reduction: 0,
+      quality_score: 0,
+      confidence_level: 'low'
+    }
+  };
 }
 
 export default router;

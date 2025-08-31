@@ -1,12 +1,12 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { vi, describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { AuthProvider } from '../../src/contexts/AuthContext';
-import { OrganizationProvider } from '../../src/contexts/OrganizationContext';
+import { AuthProvider } from '../../contexts/AuthContext';
+import { OrganizationProvider } from '../../contexts/OrganizationContext';
 import { BrowserRouter } from 'react-router-dom';
-import { apiClient } from '../../src/lib/api';
+import { apiClient } from '../../lib/api';
 
 // Mock API client
-vi.mock('../../src/lib/api', () => ({
+vi.mock('../../lib/api', () => ({
   apiClient: {
     get: vi.fn(),
     post: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('../../src/lib/api', () => ({
 }));
 
 // Mock Supabase
-vi.mock('../../src/lib/supabase', () => ({
+vi.mock('../../lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: vi.fn(),
@@ -53,7 +53,7 @@ describe('Frontend Integration Tests', () => {
 
   describe('1. Authentication Integration', () => {
     test('Auth context provides correct authentication state', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       
       // Mock successful session
       vi.mocked(supabase.auth.getSession).mockResolvedValue({
@@ -68,7 +68,7 @@ describe('Frontend Integration Tests', () => {
       });
 
       const AuthTestComponent = () => {
-        const { useAuth } = require('../../src/contexts/AuthContext');
+        const { useAuth } = require('../../contexts/AuthContext');
         const { isAuthenticated, user } = useAuth();
         
         return (
@@ -112,7 +112,7 @@ describe('Frontend Integration Tests', () => {
       });
 
       const OrgTestComponent = () => {
-        const { useOrganization } = require('../../src/contexts/OrganizationContext');
+        const { useOrganization } = require('../../contexts/OrganizationContext');
         const { organizations, currentOrganization } = useOrganization();
         
         return (
@@ -140,7 +140,7 @@ describe('Frontend Integration Tests', () => {
 
   describe('2. API Integration', () => {
     test('API client handles authentication headers correctly', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       
       // Mock session with token
       vi.mocked(supabase.auth.getSession).mockResolvedValue({
@@ -160,7 +160,7 @@ describe('Frontend Integration Tests', () => {
       });
 
       // Import after mocking
-      const { apiClient: realApiClient } = await import('../../src/lib/api');
+      const { apiClient: realApiClient } = await import('../../lib/api');
       
       await realApiClient.get('/api/projects');
 
@@ -174,13 +174,13 @@ describe('Frontend Integration Tests', () => {
       (mockError as any).status = 500;
       vi.mocked(apiClient.get).mockRejectedValue(mockError);
 
-      const { apiClient: realApiClient } = await import('../../src/lib/api');
+      const { apiClient: realApiClient } = await import('../../lib/api');
 
       await expect(realApiClient.get('/api/projects')).rejects.toThrow('Network error');
     });
 
     test('API client retries on 401 errors', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       
       // Mock token refresh
       vi.mocked(supabase.auth.refreshSession).mockResolvedValue({
@@ -199,7 +199,7 @@ describe('Frontend Integration Tests', () => {
         .mockRejectedValueOnce({ status: 401, message: 'Unauthorized' })
         .mockResolvedValueOnce({ data: 'success' });
 
-      const { apiClient: realApiClient } = await import('../../src/lib/api');
+      const { apiClient: realApiClient } = await import('../../lib/api');
       
       const result = await realApiClient.get('/api/projects');
       expect(result).toEqual({ data: 'success' });
@@ -208,7 +208,7 @@ describe('Frontend Integration Tests', () => {
 
   describe('3. Component Integration', () => {
     test('Protected routes redirect when not authenticated', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       
       // Mock no session
       vi.mocked(supabase.auth.getSession).mockResolvedValue({
@@ -217,7 +217,7 @@ describe('Frontend Integration Tests', () => {
       });
 
       const ProtectedComponent = () => {
-        const { useAuth } = require('../../src/contexts/AuthContext');
+        const { useAuth } = require('../../contexts/AuthContext');
         const { isAuthenticated, loading } = useAuth();
         
         if (loading) return <div data-testid="loading">Loading...</div>;
@@ -238,7 +238,7 @@ describe('Frontend Integration Tests', () => {
     });
 
     test('Dashboard loads data when authenticated', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       
       // Mock authenticated session
       vi.mocked(supabase.auth.getSession).mockResolvedValue({
@@ -254,7 +254,7 @@ describe('Frontend Integration Tests', () => {
 
       // Mock API responses
       vi.mocked(apiClient.get)
-        .mockImplementation((endpoint) => {
+        .mockImplementation((endpoint: string) => {
           if (endpoint === '/api/organizations') {
             return Promise.resolve({
               data: [{
@@ -273,8 +273,8 @@ describe('Frontend Integration Tests', () => {
         });
 
       const DashboardComponent = () => {
-        const { useAuth } = require('../../src/contexts/AuthContext');
-        const { useOrganization } = require('../../src/contexts/OrganizationContext');
+        const { useAuth } = require('../../contexts/AuthContext');
+        const { useOrganization } = require('../../contexts/OrganizationContext');
         const { isAuthenticated } = useAuth();
         const { currentOrganization } = useOrganization();
         
@@ -315,12 +315,12 @@ describe('Frontend Integration Tests', () => {
         off: vi.fn()
       };
 
-      vi.doMock('../../src/hooks/useWebSocket', () => ({
+      vi.doMock('../../hooks/useWebSocket', () => ({
         useWebSocket: () => mockUseWebSocket
       }));
 
       const WebSocketComponent = () => {
-        const { useWebSocket } = require('../../src/hooks/useWebSocket');
+        const { useWebSocket } = require('../../hooks/useWebSocket');
         const { isConnected, connectionStatus } = useWebSocket('test-event');
         
         return (
@@ -348,7 +348,7 @@ describe('Frontend Integration Tests', () => {
       vi.mocked(apiClient.get).mockRejectedValue(new Error('Network Error'));
 
       const ErrorHandlingComponent = () => {
-        const [error, setError] = require('react').useState<string | null>(null);
+        const [error, setError] = require('react').useState(null as string | null);
         const [loading, setLoading] = require('react').useState(false);
 
         const handleApiCall = async () => {
@@ -387,7 +387,7 @@ describe('Frontend Integration Tests', () => {
     });
 
     test('Authentication errors trigger logout', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       
       // Mock sign out function
       const mockSignOut = vi.fn();
@@ -399,7 +399,7 @@ describe('Frontend Integration Tests', () => {
       vi.mocked(apiClient.get).mockRejectedValue(authError);
 
       const AuthErrorComponent = () => {
-        const { useAuth } = require('../../src/contexts/AuthContext');
+        const { useAuth } = require('../../contexts/AuthContext');
         const { signOut } = useAuth();
 
         const handleApiCall = async () => {

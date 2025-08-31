@@ -1,5 +1,50 @@
 // Core Types and Interfaces for TestBro.ai Backend
 
+// Standardized API Response Format
+export interface PaginationMeta {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  itemsPerPage: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  nextPage: number | null;
+  previousPage: number | null;
+  // Legacy compatibility
+  page?: number;
+  limit?: number;
+  total?: number;
+  total_pages?: number;
+}
+
+export interface APIResponse<T> {
+  data: T;
+  meta?: {
+    pagination?: PaginationMeta;
+    sortField?: string;
+    sortOrder?: string;
+    search?: string;
+    filters?: Record<string, any>;
+    executionTime?: number;
+    timestamp?: string;
+    // Additional flexible fields
+    period?: string;
+    limit?: number;
+    count?: number;
+    fallback?: boolean;
+    [key: string]: any;
+  };
+  error?: string;
+}
+
+export interface APIError {
+  error: string;
+  message: string;
+  error_code?: string;
+  created_at?: string;
+  details?: any;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -530,23 +575,9 @@ export interface TestExecutionJob {
   };
 }
 
-// Error Types
-export interface APIError {
-  code: string;
-  message: string;
-  details?: any;
-  timestamp: string;
-}
+// Error Types (removed duplicate)
 
-// Pagination Types
-export interface PaginationMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-  has_next: boolean;
-  has_prev: boolean;
-}
+// Pagination Types (removed duplicate)
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -595,4 +626,26 @@ export interface TrendData {
   failed: number;
   avg_duration: number;
   ai_insights: number;
+}
+
+// Standardized WebSocket Event Structure
+export interface StandardWebSocketEvent {
+  type: 'execution_start' | 'execution_progress' | 'execution_complete' | 'execution_failed' | 
+        'step_start' | 'step_complete' | 'step_failed' | 'error' | 'log' | 
+        'browser_control' | 'recording' | 'playback' | 'live_preview' | 'screenshot' |
+        'system_message' | 'user_event' | 'broadcast_event';
+  execution_id?: string;
+  session_id?: string;
+  step_id?: string;
+  user_id?: string;
+  data: any;
+  timestamp: string;
+  metadata?: {
+    source?: string;
+    version?: string;
+    correlation_id?: string;
+    retry_count?: number;
+    target?: string;
+    [key: string]: any;
+  };
 }

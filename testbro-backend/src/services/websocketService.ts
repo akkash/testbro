@@ -8,16 +8,13 @@ import {
   RecordingEvent, 
   PlaybackEvent, 
   LivePreviewEvent, 
-  ScreenshotEvent 
+  ScreenshotEvent,
+  StandardWebSocketEvent
 } from '../types';
 
-export interface TestBroWebSocketEvent {
-  type: 'execution_start' | 'execution_progress' | 'execution_complete' | 'step_start' | 'step_complete' | 'error' | 'log' | 
-        'browser_control' | 'recording' | 'playback' | 'live_preview' | 'screenshot';
-  execution_id?: string;
-  session_id?: string;
-  data: any;
-  timestamp: string;
+// Updated to use standardized WebSocket event structure
+export interface TestBroWebSocketEvent extends StandardWebSocketEvent {
+  // Legacy compatibility - inherits from StandardWebSocketEvent
   user_id?: string;
 }
 
@@ -265,31 +262,52 @@ export class WebSocketService {
   }
 
   /**
-   * Emit execution event to subscribers
+   * Emit execution event to subscribers with standardized structure
    */
   emitExecutionEvent(event: TestBroWebSocketEvent): void {
     const room = `execution_${event.execution_id}`;
     
     console.log(`Emitting event ${event.type} to room ${room}`);
     
-    this.io.to(room).emit('execution_event', {
-      ...event,
-      timestamp: new Date().toISOString(),
-    });
+    // Ensure standardized structure
+    const standardizedEvent: StandardWebSocketEvent = {
+      type: event.type,
+      execution_id: event.execution_id,
+      session_id: event.session_id,
+      step_id: event.step_id,
+      user_id: event.user_id,
+      data: event.data,
+      timestamp: event.timestamp || new Date().toISOString(),
+      metadata: {
+        source: 'websocket_service',
+        version: '1.0',
+        ...event.metadata
+      }
+    };
+    
+    this.io.to(room).emit('execution_event', standardizedEvent);
   }
 
   /**
-   * Emit event to specific session subscribers
+   * Emit event to specific session subscribers with standardized structure
    */
   emitToSession(sessionId: string, eventType: string, data: any): void {
     const room = `session_${sessionId}`;
     
     console.log(`Emitting ${eventType} event to session room ${room}`);
     
-    this.io.to(room).emit(eventType, {
-      ...data,
+    const standardizedEvent: StandardWebSocketEvent = {
+      type: eventType as any,
+      session_id: sessionId,
+      data,
       timestamp: new Date().toISOString(),
-    });
+      metadata: {
+        source: 'websocket_service',
+        version: '1.0'
+      }
+    };
+    
+    this.io.to(room).emit(eventType, standardizedEvent);
   }
 
   /**
@@ -532,33 +550,75 @@ export class WebSocketService {
   }
 
   /**
-   * Broadcast system message to all connected clients
+   * Broadcast system message to all connected clients with standardized structure
    */
   broadcastSystemMessage(message: string, type: 'info' | 'warning' | 'error' = 'info'): void {
-    this.io.emit('system_message', {
-      type,
-      message,
+    const standardizedEvent: StandardWebSocketEvent = {
+      type: 'system_message',
+      data: {
+        message,
+        level: type
+      },
       timestamp: new Date().toISOString(),
-    });
+      metadata: {
+        source: 'websocket_service',
+        version: '1.0',
+        target: 'system_broadcast'
+      }
+    };
+    
+    this.io.emit('system_message', standardizedEvent);
   }
 
   /**
-   * Emit event to specific user
+   * Emit event to specific user with standardized structure
    */
   emitToUser(userId: string, event: TestBroWebSocketEvent): void {
     // Find all sockets for this user
     for (const [_socketId, client] of this.connectedClients.entries()) {
       if (client.user.id === userId) {
-        client.socket.emit('user_event', event);
+        const standardizedEvent: StandardWebSocketEvent = {
+          type: event.type,
+          execution_id: event.execution_id,
+          session_id: event.session_id,
+          step_id: event.step_id,
+          user_id: userId,
+          data: event.data,
+          timestamp: event.timestamp || new Date().toISOString(),
+          metadata: {
+            source: 'websocket_service',
+            version: '1.0',
+            target: 'user_specific',
+            ...event.metadata
+          }
+        };
+        
+        client.socket.emit('user_event', standardizedEvent);
       }
     }
   }
 
   /**
-   * Broadcast event to all connected clients
+   * Broadcast event to all connected clients with standardized structure
    */
   broadcastEvent(event: TestBroWebSocketEvent): void {
-    this.io.emit('broadcast_event', event);
+    const standardizedEvent: StandardWebSocketEvent = {
+      type: event.type,
+      execution_id: event.execution_id,
+      session_id: event.session_id,
+      step_id: event.step_id,
+      user_id: event.user_id,
+      data: event.data,
+      timestamp: event.timestamp || new Date().toISOString(),
+      metadata: {
+        source: 'websocket_service',
+        version: '1.0',
+        target: 'broadcast',
+        ...event.metadata
+      }
+    };
+    
+    this.io.emit('broadcast_event', standardizedEvent);
   }
 
   /**
