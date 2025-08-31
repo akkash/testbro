@@ -50,6 +50,8 @@ import apiKeyRoutes from './routes/apiKeys';
 import performanceRoutes from './routes/performance';
 import browserControlRoutes from './routes/browserControl';
 import storageRoutes from './routes/storage';
+import domainTestingRoutes from './routes/domainTesting';
+import noCodeRecordingRoutes from './routes/noCodeRecording';
 
 // Initialize Express app
 const app = express();
@@ -230,6 +232,8 @@ app.use('/api/api-keys', apiKeyRoutes);
 app.use('/api/performance', performanceRoutes);
 app.use('/api/browser-control', browserControlRoutes);
 app.use('/api/storage', storageRoutes);
+app.use('/api/domain-testing', domainTestingRoutes);
+app.use('/api/no-code', noCodeRecordingRoutes);
 
 // WebSocket status endpoint
 app.get('/api/websocket/status', (_req, res) => {

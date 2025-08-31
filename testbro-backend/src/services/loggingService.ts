@@ -27,6 +27,8 @@ export enum LogCategory {
   AUDIT = 'audit',
   BROWSER = 'browser',
   CACHE = 'cache',
+  HEALING = 'healing',
+  AI = 'ai',
 }
 
 // Structured log interface
