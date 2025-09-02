@@ -1,12 +1,24 @@
-import io, { type Socket } from 'socket.io-client';
-import { apiClient } from '../api';
+import io from 'socket.io-client';
+
+export interface WebSocketEventData {
+  [key: string]: unknown;
+}
+
+export type WebSocketEventPayload =
+  | BrowserControlEvent
+  | RecordingEvent
+  | PlaybackEvent
+  | LivePreviewEvent
+  | ScreenshotEvent
+  | TestBroWebSocketEvent
+  | WebSocketEventData;
 
 export interface TestBroWebSocketEvent {
-  type: 'execution_start' | 'execution_progress' | 'execution_complete' | 'step_start' | 'step_complete' | 'error' | 'log' | 
+  type: 'execution_start' | 'execution_progress' | 'execution_complete' | 'step_start' | 'step_complete' | 'error' | 'log' |
         'browser_control' | 'recording' | 'playback' | 'live_preview' | 'screenshot';
   execution_id?: string;
   session_id?: string;
-  data: any;
+  data: WebSocketEventData;
   timestamp: string;
   user_id?: string;
 }
@@ -18,10 +30,18 @@ export interface WebSocketConnectionState {
   connectionId?: string;
 }
 
+export interface LogEntry {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  message: string;
+  step_id?: string;
+  screenshot?: string;
+}
+
 export interface ExecutionProgressData {
   progress: number;
   current_step?: string;
-  logs?: any[];
+  logs?: LogEntry[];
   timestamp: string;
 }
 
@@ -35,10 +55,29 @@ export interface StepUpdateData {
   timestamp: string;
 }
 
+export interface TestResult {
+  step_id: string;
+  status: 'passed' | 'failed';
+  duration: number;
+  screenshot?: string;
+  error_message?: string;
+  timestamp: string;
+}
+
+export interface ExecutionMetrics {
+  total_steps: number;
+  passed_steps: number;
+  failed_steps: number;
+  average_step_duration: number;
+  total_duration: number;
+  memory_usage?: number;
+  cpu_usage?: number;
+}
+
 export interface ExecutionCompleteData {
   status: 'completed' | 'failed' | 'cancelled';
-  results: any[];
-  metrics: any;
+  results: TestResult[];
+  metrics: ExecutionMetrics;
   error_message?: string;
   timestamp: string;
 }
@@ -46,30 +85,88 @@ export interface ExecutionCompleteData {
 export interface BrowserControlEvent {
   session_id: string;
   command: string;
-  parameters?: any;
+  parameters?: Record<string, unknown>;
   timestamp: string;
+}
+
+export interface RecordedAction {
+  id: string;
+  session_id: string;
+  order: number;
+  timestamp: string;
+  action_type: 'click' | 'type' | 'scroll' | 'hover' | 'keypress' | 'select' | 'drag' | 'drop';
+  element: {
+    selector: string;
+    xpath: string;
+    text_content: string;
+    tag_name: string;
+    attributes: Record<string, string>;
+    bounding_box: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+  };
+  value?: string;
+  coordinates?: {
+    x: number;
+    y: number;
+  };
+  modifiers?: string[];
+  page_url: string;
+  viewport_size: {
+    width: number;
+    height: number;
+  };
+  screenshot_before?: string;
+  screenshot_after?: string;
+}
+
+export interface RecordingSession {
+  id: string;
+  name: string;
+  description: string;
+  browser_session_id: string;
+  project_id: string;
+  target_id: string;
+  user_id: string;
+  status: 'recording' | 'paused' | 'completed' | 'failed';
+  actions: RecordedAction[];
+  start_url: string;
+  total_duration_ms: number;
+  created_at: string;
+  completed_at?: string;
+  tags: string[];
 }
 
 export interface RecordingEvent {
   session_id: string;
   action: 'start' | 'pause' | 'resume' | 'stop' | 'action_recorded';
-  parameters?: any;
-  recording_session?: any;
-  recorded_action?: any;
+  parameters?: Record<string, unknown>;
+  recording_session?: RecordingSession;
+  recorded_action?: RecordedAction;
   timestamp: string;
 }
 
 export interface PlaybackEvent {
   session_id: string;
   action: 'start' | 'pause' | 'resume' | 'stop' | 'step' | 'seek';
-  parameters?: any;
+  parameters?: Record<string, unknown>;
   timestamp: string;
+}
+
+export interface DOMState {
+  html: string;
+  styles: string;
+  scripts: string;
+  url: string;
 }
 
 export interface LivePreviewEvent {
   session_id: string;
   data: {
-    dom_state?: any;
+    dom_state?: DOMState;
     mouse_position?: { x: number; y: number };
     viewport_size?: { width: number; height: number };
     url?: string;
@@ -77,27 +174,40 @@ export interface LivePreviewEvent {
   timestamp: string;
 }
 
+export interface ScreenshotMetadata {
+  width: number;
+  height: number;
+  fileSize: number;
+  format: string;
+  pageUrl: string;
+  device: 'desktop' | 'mobile' | 'tablet';
+  browser: string;
+  viewport: { width: number; height: number };
+  timestamp: string;
+}
+
 export interface ScreenshotEvent {
   session_id: string;
   data: {
     screenshot_url: string;
-    metadata?: any;
+    metadata?: ScreenshotMetadata;
   };
   timestamp: string;
 }
 
 export type WebSocketEventCallback = (event: TestBroWebSocketEvent) => void;
+export type WebSocketEventHandler = (data: WebSocketEventPayload) => void;
 export type ConnectionStateCallback = (state: WebSocketConnectionState) => void;
-export type ExecutionEventCallback = (event: any) => void;
+export type ExecutionEventCallback = (event: TestBroWebSocketEvent) => void;
 
 class WebSocketService {
-  private socket: any | null = null;
+  private socket: ReturnType<typeof io> | null = null;
   private connectionState: WebSocketConnectionState = {
     connected: false,
     connecting: false,
     error: null,
   };
-  private eventListeners = new Map<string, Set<WebSocketEventCallback>>();
+  private eventListeners = new Map<string, Set<WebSocketEventHandler>>();
   private connectionStateListeners = new Set<ConnectionStateCallback>();
   private executionEventListeners = new Map<string, Set<ExecutionEventCallback>>();
   private subscriptions = new Set<string>();
@@ -311,7 +421,7 @@ class WebSocketService {
   /**
    * Send browser control command
    */
-  sendBrowserCommand(sessionId: string, command: string, parameters?: any): void {
+  sendBrowserCommand(sessionId: string, command: string, parameters?: Record<string, unknown>): void {
     if (!this.socket?.connected) {
       console.warn('WebSocket not connected, cannot send browser command');
       return;
@@ -327,7 +437,7 @@ class WebSocketService {
   /**
    * Send recording control command
    */
-  sendRecordingControl(sessionId: string, action: 'start' | 'pause' | 'resume' | 'stop', parameters?: any): void {
+  sendRecordingControl(sessionId: string, action: 'start' | 'pause' | 'resume' | 'stop', parameters?: Record<string, unknown>): void {
     if (!this.socket?.connected) {
       console.warn('WebSocket not connected, cannot send recording control');
       return;
@@ -343,7 +453,7 @@ class WebSocketService {
   /**
    * Send playback control command
    */
-  sendPlaybackControl(sessionId: string, action: 'start' | 'pause' | 'resume' | 'stop' | 'step' | 'seek', parameters?: any): void {
+  sendPlaybackControl(sessionId: string, action: 'start' | 'pause' | 'resume' | 'stop' | 'step' | 'seek', parameters?: Record<string, unknown>): void {
     if (!this.socket?.connected) {
       console.warn('WebSocket not connected, cannot send playback control');
       return;
@@ -375,7 +485,7 @@ class WebSocketService {
   /**
    * Add event listener
    */
-  addEventListener(event: string, callback: WebSocketEventCallback): void {
+  addEventListener(event: string, callback: WebSocketEventHandler): void {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, new Set());
     }
@@ -385,7 +495,7 @@ class WebSocketService {
   /**
    * Remove event listener
    */
-  removeEventListener(event: string, callback: WebSocketEventCallback): void {
+  removeEventListener(event: string, callback: WebSocketEventHandler): void {
     if (this.eventListeners.has(event)) {
       this.eventListeners.get(event)!.delete(callback);
       if (this.eventListeners.get(event)!.size === 0) {
@@ -548,12 +658,23 @@ class WebSocketService {
   /**
    * Emit event to listeners
    */
-  private emitEvent(eventType: string, data: any): void {
+  private emitEvent(eventType: string, data: WebSocketEventPayload): void {
     if (this.eventListeners.has(eventType)) {
       const listeners = this.eventListeners.get(eventType)!;
       listeners.forEach(callback => {
         try {
-          callback({ type: eventType as any, data, timestamp: new Date().toISOString() });
+          // Handle different event types
+          if (data && typeof data === 'object' && 'type' in data && 'data' in data && 'timestamp' in data) {
+            // Already a TestBroWebSocketEvent
+            callback(data as TestBroWebSocketEvent);
+          } else {
+            // Create a TestBroWebSocketEvent from the payload
+            callback({
+              type: eventType as TestBroWebSocketEvent['type'],
+              data: data as WebSocketEventData,
+              timestamp: new Date().toISOString()
+            });
+          }
         } catch (error) {
           console.error(`Error in ${eventType} event callback:`, error);
         }
@@ -642,8 +763,16 @@ class WebSocketService {
    */
   private getWebSocketUrl(): string {
     // Use environment variable or default to development URL
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-    return baseUrl;
+    const wsUrl = (globalThis as any).importMeta?.env?.VITE_WS_URL;
+    const apiUrl = (globalThis as any).importMeta?.env?.VITE_API_URL || 'http://localhost:3001';
+
+    // If WS_URL is explicitly set, use it
+    if (wsUrl) {
+      return wsUrl;
+    }
+
+    // Otherwise, derive from API_URL by replacing http with ws
+    return apiUrl.replace(/^http/, 'ws');
   }
 }
 

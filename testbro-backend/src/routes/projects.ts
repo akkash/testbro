@@ -962,41 +962,41 @@ router.post('/:id/otp-config',
     provider: Joi.string().valid('mock', 'twilio', 'aws-sns').required(),
     config: Joi.object({
       // Twilio fields
-      twilioAccountSid: Joi.string().when('$provider', {
+      twilioAccountSid: Joi.string().when('provider', {
         is: 'twilio',
         then: Joi.required(),
         otherwise: Joi.forbidden()
       }),
-      twilioAuthToken: Joi.string().when('$provider', {
+      twilioAuthToken: Joi.string().when('provider', {
         is: 'twilio',
         then: Joi.required(),
         otherwise: Joi.forbidden()
       }),
-      twilioFromNumber: Joi.string().when('$provider', {
+      twilioFromNumber: Joi.string().when('provider', {
         is: 'twilio',
         then: Joi.required(),
         otherwise: Joi.forbidden()
       }),
-      
+
       // AWS SNS fields
-      awsAccessKeyId: Joi.string().when('$provider', {
+      awsAccessKeyId: Joi.string().when('provider', {
         is: 'aws-sns',
         then: Joi.required(),
         otherwise: Joi.forbidden()
       }),
-      awsSecretAccessKey: Joi.string().when('$provider', {
+      awsSecretAccessKey: Joi.string().when('provider', {
         is: 'aws-sns',
         then: Joi.required(),
         otherwise: Joi.forbidden()
       }),
-      awsRegion: Joi.string().when('$provider', {
+      awsRegion: Joi.string().when('provider', {
         is: 'aws-sns',
         then: Joi.required(),
         otherwise: Joi.forbidden()
       }),
-      
+
       // Mock provider fields
-      defaultMockOtp: Joi.string().when('$provider', {
+      defaultMockOtp: Joi.string().when('provider', {
         is: 'mock',
         then: Joi.optional(),
         otherwise: Joi.forbidden()
@@ -1004,18 +1004,18 @@ router.post('/:id/otp-config',
       mockOtps: Joi.object().pattern(
         Joi.string(), // phone number
         Joi.string()  // OTP
-      ).when('$provider', {
+      ).when('provider', {
         is: 'mock',
         then: Joi.optional(),
         otherwise: Joi.forbidden()
       }),
-      
+
       // Common fields
       otpLength: Joi.number().integer().min(4).max(8).optional(),
       validityMinutes: Joi.number().integer().min(1).max(60).optional(),
       maxRetries: Joi.number().integer().min(1).max(10).optional()
     }).required()
-  }).options({ context: { provider: Joi.ref('provider') } }))),
+  })),
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const { provider, config } = req.body;
@@ -1070,8 +1070,8 @@ router.post('/:id/otp-config',
         message: 'Failed to configure OTP provider',
       });
     }
-  })
-);
+  });
+
 
 /**
  * POST /api/projects/:id/otp-test

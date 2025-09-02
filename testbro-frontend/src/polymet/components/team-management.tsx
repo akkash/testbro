@@ -1,44 +1,29 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Users,
   UserPlus,
-  Crown,
-  Shield,
-  User,
-  Mail,
-  Calendar,
+  Crown as CrownIcon,
   Activity,
   MoreHorizontal,
-  Edit,
+  Pencil as Edit,
   Trash2,
-  Settings,
   Search,
-  Filter,
   Download,
   Loader2,
   AlertTriangle,
   Plus,
   BarChart3,
   TrendingUp,
-  TrendingDown,
-  Clock,
   CheckCircle,
   XCircle,
   Eye,
   FileText,
-  UserCog,
-  Building,
-  Zap,
+  UserCog as UserCogIcon,
   Target,
   MessageSquare,
   Link,
   Copy,
-  Share2,
-  CalendarDays,
-  Globe,
-  Sparkles,
   ArrowRight,
-  Camera,
 } from "lucide-react";
 import {
   Card,
@@ -80,55 +65,39 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
+
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  OrganizationService,
-  OrganizationMember,
-  InviteMemberRequest,
-  UpdateMemberRoleRequest
-} from "@/lib/services/organizationService";
+import { OrganizationService } from "@/lib/services/organizationService";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 
 // Chart imports for activity trends
 import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  Tooltip,
 } from "recharts";
 
 // Enhanced role definitions with permissions
 const ROLE_DEFINITIONS = {
   admin: {
     name: "Administrator",
-    icon: Crown,
+    icon: CrownIcon,
     color: "yellow",
     permissions: ["Manage billing", "Manage team", "Edit all tests", "View analytics", "Export data"],
     description: "Full access to all features and settings"
   },
   developer: {
     name: "Developer",
-    icon: UserCog,
+    icon: UserCogIcon,
     color: "purple",
     permissions: ["Create tests", "Edit tests", "Run tests", "View analytics"],
     description: "Can create and manage tests"
@@ -357,7 +326,7 @@ const InviteMemberDialog = ({
     try {
       const { error: inviteError, data } = await OrganizationService.inviteMember(organizationId, {
         email: inviteData.email,
-        role: inviteData.role,
+        role: mapFrontendRoleToBackend(inviteData.role),
         message: inviteData.message,
         expiresIn: parseInt(inviteData.expiresIn),
         sendEmail: inviteData.sendEmail,
@@ -590,7 +559,7 @@ const InviteMemberDialog = ({
               </>
             ) : (
               <>
-                <Mail className="w-4 h-4 mr-2" />
+                <MailIcon className="w-4 h-4 mr-2" />
                 Send Invitation
               </>
             )}
@@ -601,15 +570,31 @@ const InviteMemberDialog = ({
   );
 };
 
+// Role mapping function to convert frontend roles to backend roles
+const mapFrontendRoleToBackend = (frontendRole: keyof typeof ROLE_DEFINITIONS): 'admin' | 'editor' | 'viewer' => {
+  switch (frontendRole) {
+    case 'admin':
+      return 'admin';
+    case 'developer':
+    case 'tester':
+    case 'analyst':
+      return 'editor';
+    case 'viewer':
+      return 'viewer';
+    default:
+      return 'viewer';
+  }
+};
+
 export default function TeamManagement() {
-  const { user } = useAuth();
+  const {} = useAuth();
   const { currentOrganization, userRole, loading: orgLoading, error: orgError } = useOrganization();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
-  const [exportFormat, setExportFormat] = useState("csv");
+
 
   // Data state
   const [members, setMembers] = useState<any[]>([]);
@@ -617,7 +602,7 @@ export default function TeamManagement() {
   const [error, setError] = useState<string | null>(null);
 
   // Activity data for charts
-  const [activityData, setActivityData] = useState({
+  const [activityData] = useState({
     testsCreatedTrend: [
       { month: 'Jan', tests: 45 },
       { month: 'Feb', tests: 52 },
@@ -898,7 +883,7 @@ export default function TeamManagement() {
             <span>Overview</span>
           </TabsTrigger>
           <TabsTrigger value="members" className="flex items-center space-x-2">
-            <UserCog className="w-4 h-4" />
+            <UserCogIcon className="w-4 h-4" />
             <span>Members</span>
           </TabsTrigger>
           <TabsTrigger value="activity" className="flex items-center space-x-2">
@@ -953,7 +938,7 @@ export default function TeamManagement() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab("members")}>
               <CardContent className="p-6 text-center">
-                <UserCog className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+                <UserCogIcon className="w-12 h-12 text-blue-600 mx-auto mb-3" />
                 <h3 className="font-semibold text-gray-900 mb-2">Manage Members</h3>
                 <p className="text-sm text-gray-600">View and manage team members</p>
                 <ArrowRight className="w-5 h-5 text-blue-600 mx-auto mt-3" />
@@ -962,7 +947,7 @@ export default function TeamManagement() {
 
             <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setShowInviteDialog(true)}>
               <CardContent className="p-6 text-center">
-                <Mail className="w-12 h-12 text-green-600 mx-auto mb-3" />
+                <MailIcon className="w-12 h-12 text-green-600 mx-auto mb-3" />
                 <h3 className="font-semibold text-gray-900 mb-2">Invite Members</h3>
                 <p className="text-sm text-gray-600">Send invitations to join your team</p>
                 <ArrowRight className="w-5 h-5 text-green-600 mx-auto mt-3" />
@@ -1341,7 +1326,7 @@ export default function TeamManagement() {
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {Object.entries(roleStats).map((entry, index) => (
+                      {Object.entries(roleStats).map((_, index) => (
                         <Cell key={`cell-${index}`} fill={`hsl(${index * 60}, 70%, 50%)`} />
                       ))}
                     </Pie>
@@ -1352,10 +1337,11 @@ export default function TeamManagement() {
                 <div className="space-y-3">
                   {Object.entries(roleStats).map(([role, count]) => {
                     const definition = ROLE_DEFINITIONS[role as keyof typeof ROLE_DEFINITIONS];
+                    const countValue = count as number;
                     if (!definition) return null;
 
                     const IconComponent = definition.icon;
-                    const percentage = ((count / members.length) * 100).toFixed(1);
+                    const percentage = ((countValue / members.length) * 100).toFixed(1);
 
                     return (
                       <div key={role} className="flex items-center justify-between">
@@ -1363,7 +1349,7 @@ export default function TeamManagement() {
                           <IconComponent className={`w-5 h-5 text-${definition.color}-600`} />
                           <div>
                             <p className="font-medium text-sm">{definition.name}</p>
-                            <p className="text-xs text-gray-500">{count} members</p>
+                            <p className="text-xs text-gray-500">{countValue} members</p>
                           </div>
                         </div>
                         <Badge variant="outline" className="text-xs">

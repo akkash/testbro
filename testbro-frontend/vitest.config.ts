@@ -1,6 +1,6 @@
-// @ts-ignore - Vitest types will be available after npm install
+// @ts-expect-error - Vitest types will be available after npm install
 /// <reference types="vitest" />
-// @ts-ignore - Vitest imports will be available after npm install
+// @ts-expect-error - Vitest imports will be available after npm install
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'

@@ -16,6 +16,19 @@ interface AuthTokenInfo {
   shouldRefresh?: boolean
 }
 
+interface ApiResponse<T = unknown> {
+  data?: T
+  error?: string
+  message?: string
+  code?: string
+}
+
+interface ApiError extends Error {
+  status?: number
+  code?: string
+  details?: unknown
+}
+
 class ApiClient {
   private isRefreshing = false
   private refreshPromise: Promise<string | null> | null = null
@@ -112,18 +125,18 @@ class ApiClient {
     return headers
   }
 
-  private handleResponse = async (response: Response, originalRequest?: () => Promise<Response>, config?: ApiRequestConfig): Promise<any> => {
+  private handleResponse = async <T = unknown>(response: Response, originalRequest?: () => Promise<Response>, config?: ApiRequestConfig): Promise<T> => {
     if (!response.ok) {
       // Handle authentication errors
       if (response.status === 401 && config?.retryOnAuthFailure !== false) {
         console.log('Authentication failed, attempting token refresh...')
         const newToken = await this.refreshAuthToken()
-        
+
         if (newToken && originalRequest) {
           console.log('Token refreshed, retrying request...')
           // Retry the original request with the new token
           const retryResponse = await originalRequest()
-          return this.handleResponse(retryResponse, undefined, { ...config, retryOnAuthFailure: false })
+          return this.handleResponse<T>(retryResponse, undefined, { ...config, retryOnAuthFailure: false })
         } else {
           // Token refresh failed or no retry function
           console.error('Token refresh failed, redirecting to login')
@@ -132,24 +145,24 @@ class ApiClient {
         }
       }
 
-      const errorData = await response.json().catch(() => ({ 
-        error: 'NETWORK_ERROR', 
-        message: 'Network request failed' 
+      const errorData = await response.json().catch(() => ({
+        error: 'NETWORK_ERROR',
+        message: 'Network request failed'
       }))
-      
+
       // Enhanced error information
-      const error = new Error(errorData.message || `HTTP ${response.status}`)
-      ;(error as any).status = response.status
-      ;(error as any).code = errorData.code || errorData.error
-      ;(error as any).details = errorData
-      
+      const error: ApiError = new Error(errorData.message || `HTTP ${response.status}`)
+      error.status = response.status
+      error.code = errorData.code || errorData.error
+      error.details = errorData
+
       throw error
     }
-    
+
     return response.json()
   }
 
-  public get = async (endpoint: string, config?: ApiRequestConfig) => {
+  public get = async <T = unknown>(endpoint: string, config?: ApiRequestConfig): Promise<T> => {
     const makeRequest = async () => {
       const headers = await this.getAuthHeaders(config)
       return fetch(`${API_BASE_URL}${endpoint}`, {
@@ -157,12 +170,12 @@ class ApiClient {
         headers
       })
     }
-    
+
     const response = await makeRequest()
-    return this.handleResponse(response, makeRequest, config)
+    return this.handleResponse<T>(response, makeRequest, config)
   }
 
-  public post = async (endpoint: string, data?: any, config?: ApiRequestConfig) => {
+  public post = async <T = unknown>(endpoint: string, data?: unknown, config?: ApiRequestConfig): Promise<T> => {
     const makeRequest = async () => {
       const headers = await this.getAuthHeaders(config)
       return fetch(`${API_BASE_URL}${endpoint}`, {
@@ -171,12 +184,12 @@ class ApiClient {
         body: data ? JSON.stringify(data) : undefined
       })
     }
-    
+
     const response = await makeRequest()
-    return this.handleResponse(response, makeRequest, config)
+    return this.handleResponse<T>(response, makeRequest, config)
   }
 
-  public put = async (endpoint: string, data?: any, config?: ApiRequestConfig) => {
+  public put = async <T = unknown>(endpoint: string, data?: unknown, config?: ApiRequestConfig): Promise<T> => {
     const makeRequest = async () => {
       const headers = await this.getAuthHeaders(config)
       return fetch(`${API_BASE_URL}${endpoint}`, {
@@ -185,12 +198,12 @@ class ApiClient {
         body: data ? JSON.stringify(data) : undefined
       })
     }
-    
+
     const response = await makeRequest()
-    return this.handleResponse(response, makeRequest, config)
+    return this.handleResponse<T>(response, makeRequest, config)
   }
 
-  public delete = async (endpoint: string, config?: ApiRequestConfig) => {
+  public delete = async <T = unknown>(endpoint: string, config?: ApiRequestConfig): Promise<T> => {
     const makeRequest = async () => {
       const headers = await this.getAuthHeaders(config)
       return fetch(`${API_BASE_URL}${endpoint}`, {
@@ -198,12 +211,12 @@ class ApiClient {
         headers
       })
     }
-    
+
     const response = await makeRequest()
-    return this.handleResponse(response, makeRequest, config)
+    return this.handleResponse<T>(response, makeRequest, config)
   }
 
-  public patch = async (endpoint: string, data?: any, config?: ApiRequestConfig) => {
+  public patch = async <T = unknown>(endpoint: string, data?: unknown, config?: ApiRequestConfig): Promise<T> => {
     const makeRequest = async () => {
       const headers = await this.getAuthHeaders(config)
       return fetch(`${API_BASE_URL}${endpoint}`, {
@@ -214,9 +227,11 @@ class ApiClient {
     }
     
     const response = await makeRequest()
-    return this.handleResponse(response, makeRequest, config)
+    return this.handleResponse<T>(response, makeRequest, config)
   }
 }
+
+export type { ApiResponse, ApiError, ApiRequestConfig, AuthTokenInfo }
 
 export const apiClient = new ApiClient()
 export default apiClient

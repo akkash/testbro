@@ -15,15 +15,14 @@ import {
   Wifi,
   WifiOff,
   BarChart3,
-  PieChart,
   DollarSign,
-  Users,
   Filter,
   Download,
   Calendar,
   ArrowUp,
   ArrowDown,
   Eye,
+  Users,
 } from "lucide-react";
 import BrowserAutomationPlayer from "@/polymet/components/browser-automation-player";
 import {

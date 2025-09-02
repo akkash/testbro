@@ -418,12 +418,14 @@ export default function DashboardOverview() {
       }
     };
 
-    if (connectionState.connected) {
+    if (connectionState.connected && addEventListener) {
       addEventListener('execution_event', handleRealTimeEvent);
     }
 
     return () => {
-      removeEventListener('execution_event', handleRealTimeEvent);
+      if (removeEventListener) {
+        removeEventListener('execution_event', handleRealTimeEvent);
+      }
     };
   }, [connectionState.connected, addEventListener, removeEventListener]);
 

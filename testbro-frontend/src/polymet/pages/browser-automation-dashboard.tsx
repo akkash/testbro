@@ -13,14 +13,7 @@ import {
   Clock,
   Eye,
   Download,
-  Share,
-  Zap,
-  User,
-  ShoppingCart,
-  Search,
-  LogIn,
   Bot,
-  Lightbulb,
   History,
   PlayCircle,
   FileText,
@@ -212,8 +205,6 @@ interface BrowserAutomationDashboardState {
   playbackSessions: number;
   showSessionHistory: boolean;
   showAISuggestions: boolean;
-}
-  playbackSessions: number;
 }
 
 export default function BrowserAutomationDashboard() {

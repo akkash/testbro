@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { websocketService, type WebSocketConnectionState } from '../lib/services/websocketService';
 
 /**
@@ -49,12 +49,34 @@ export function useWebSocket() {
     websocketService.disconnect();
   };
 
+  const addEventListener = useCallback((eventType: string, callback: (event: any) => void) => {
+    try {
+      if (websocketService && typeof websocketService.addEventListener === 'function') {
+        return websocketService.addEventListener(eventType, callback);
+      }
+    } catch (error) {
+      console.warn('Failed to add event listener:', error);
+    }
+  }, []);
+
+  const removeEventListener = useCallback((eventType: string, callback: (event: any) => void) => {
+    try {
+      if (websocketService && typeof websocketService.removeEventListener === 'function') {
+        return websocketService.removeEventListener(eventType, callback);
+      }
+    } catch (error) {
+      console.warn('Failed to remove event listener:', error);
+    }
+  }, []);
+
   return {
     connectionState,
     isConnecting,
     connect,
     disconnect,
     isConnected: connectionState.connected,
+    addEventListener,
+    removeEventListener,
   };
 }
 

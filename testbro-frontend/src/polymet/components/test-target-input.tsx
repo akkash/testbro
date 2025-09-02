@@ -6,10 +6,6 @@ import {
   Smartphone,
   Monitor,
   MoreHorizontal,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertCircle,
   Filter,
   TrendingUp,
   TrendingDown,
@@ -163,7 +159,6 @@ export default function TestTargetInput() {
     } as TestTarget;
 
     if (formData.appFile && formData.platform === "mobile-app") {
-      // @ts-ignore - TestTarget may include optional appFile in your model
       newTarget.appFile = {
         name: formData.appFile.name,
         size: formData.appFile.size,

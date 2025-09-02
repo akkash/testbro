@@ -1,8 +1,5 @@
-// @ts-ignore - Testing library imports will be available after npm install
 import '@testing-library/jest-dom'
-// @ts-ignore - Testing library imports will be available after npm install
 import { cleanup } from '@testing-library/react'
-// @ts-ignore - Vitest imports will be available after npm install
 import { afterEach, vi } from 'vitest'
 
 // Cleanup after each test case
