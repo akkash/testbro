@@ -30,6 +30,7 @@ import Pricing from "@/polymet/pages/pricing";
 import Login from "@/polymet/pages/login";
 import Signup from "@/polymet/pages/signup";
 import BrowserAutomationDashboard from "@/polymet/pages/browser-automation-dashboard";
+import FullWebsiteTestDashboard from "@/polymet/pages/full-website-test";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 export default function TestBroApp() {
@@ -194,6 +195,17 @@ export default function TestBroApp() {
             <ProtectedRoute>
               <TestBroLayout>
                 <Executions />
+              </TestBroLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/full-website-test"
+          element={
+            <ProtectedRoute>
+              <TestBroLayout>
+                <FullWebsiteTestDashboard />
               </TestBroLayout>
             </ProtectedRoute>
           }

@@ -1,0 +1,33 @@
+# Build outputs
+dist
+build
+.output
+.next
+.nuxt
+.vite
+
+# Node modules
+node_modules
+
+# Package files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated files
+*.generated.*
+*.auto.*
+
+# Storybook
+storybook-static
+
+# Coverage
+coverage

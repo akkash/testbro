@@ -215,6 +215,22 @@ export class MetricsService {
         endpoint: req.route?.path || req.path,
       });
 
+      // Set up response tracking before sending headers
+      const originalSend = res.send;
+      res.send = function(body) {
+        const duration = performance.now() - startTime;
+        
+        // Set headers before sending response
+        if (!res.headersSent) {
+          res.set({
+            'X-Response-Time': `${duration.toFixed(2)}ms`,
+            'X-Request-ID': req.requestId || 'unknown',
+          });
+        }
+        
+        return originalSend.call(this, body);
+      };
+      
       res.on('finish', () => {
         const duration = this.endTimer(trackerId);
         
@@ -253,12 +269,6 @@ export class MetricsService {
             status_code: res.statusCode.toString(),
           });
         }
-
-        // Set response headers with metrics
-        res.set({
-          'X-Response-Time': duration ? `${duration.toFixed(2)}ms` : 'unknown',
-          'X-Request-ID': req.requestId || 'unknown',
-        });
       });
 
       next();

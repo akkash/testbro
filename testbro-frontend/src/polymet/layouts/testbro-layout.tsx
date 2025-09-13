@@ -19,6 +19,7 @@ import {
   Target,
   FolderOpen,
   Monitor,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ interface TestBroLayoutProps {
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Browser Automation", href: "/browser-automation", icon: Monitor },
+  { name: "Full Website Test", href: "/full-website-test", icon: Globe },
   { name: "Projects", href: "/projects", icon: FolderOpen },
   { name: "Test Targets", href: "/test-targets", icon: Target },
   { name: "Test Cases", href: "/test-cases", icon: TestTube },

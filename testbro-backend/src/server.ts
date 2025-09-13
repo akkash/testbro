@@ -35,23 +35,7 @@ import Redis from 'ioredis';
 // Import middleware
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
-// Import routes
-import authRoutes from './routes/auth';
-import projectRoutes from './routes/projects';
-import testCaseRoutes from './routes/testCases';
-import testSuiteRoutes from './routes/testSuites';
-import testTargetRoutes from './routes/testTargets';
-import executionRoutes from './routes/executions';
-import aiRoutes from './routes/ai';
-import dashboardRoutes from './routes/dashboard';
-import organizationRoutes from './routes/organizations';
-import webhookRoutes from './routes/webhooks';
-import apiKeyRoutes from './routes/apiKeys';
-import performanceRoutes from './routes/performance';
-import browserControlRoutes from './routes/browserControl';
-import storageRoutes from './routes/storage';
-import domainTestingRoutes from './routes/domainTesting';
-import noCodeRecordingRoutes from './routes/noCodeRecording';
+// Routes will be imported after WebSocket service initialization
 
 // Initialize Express app
 const app = express();
@@ -217,23 +201,68 @@ app.get('/api/security/stats', async (_req, res) => {
   }
 });
 
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/projects', projectRoutes);
-app.use('/api/test-cases', testCaseRoutes);
-app.use('/api/test-suites', testSuiteRoutes);
-app.use('/api/test-targets', testTargetRoutes);
-app.use('/api/executions', executionRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/organizations', organizationRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/api-keys', apiKeyRoutes);
-app.use('/api/performance', performanceRoutes);
-app.use('/api/browser-control', browserControlRoutes);
-app.use('/api/storage', storageRoutes);
-app.use('/api/domain-testing', domainTestingRoutes);
-app.use('/api/no-code', noCodeRecordingRoutes);
+// API routes - Load dynamically after WebSocket service initialization
+async function setupRoutes() {
+  const routeConfigs = [
+    { name: 'auth', path: '/api/auth', module: './routes/auth' },
+    { name: 'projects', path: '/api/projects', module: './routes/projects' },
+    { name: 'testCases', path: '/api/test-cases', module: './routes/testCases' },
+    { name: 'testSuites', path: '/api/test-suites', module: './routes/testSuites' },
+    { name: 'testTargets', path: '/api/test-targets', module: './routes/testTargets' },
+    { name: 'executions', path: '/api/executions', module: './routes/executions' },
+    { name: 'ai', path: '/api/ai', module: './routes/ai' },
+    { name: 'dashboard', path: '/api/dashboard', module: './routes/dashboard' },
+    { name: 'organizations', path: '/api/organizations', module: './routes/organizations' },
+    { name: 'webhooks', path: '/api/webhooks', module: './routes/webhooks' },
+    { name: 'apiKeys', path: '/api/api-keys', module: './routes/apiKeys' },
+    { name: 'performance', path: '/api/performance', module: './routes/performance' },
+    { name: 'browserControl', path: '/api/browser-control', module: './routes/browserControl' },
+    { name: 'browserAutomation', path: '/api/browser', module: './routes/browserAutomation' },
+    { name: 'visualTest', path: '/api/visual-tests', module: './routes/visualTest' },
+    { name: 'scheduler', path: '/api/scheduler', module: './routes/scheduler' },
+    { name: 'storage', path: '/api/storage', module: './routes/storage' },
+    { name: 'domainTesting', path: '/api/domain-testing', module: './routes/domainTesting' },
+    { name: 'noCodeRecording', path: '/api/no-code', module: './routes/noCodeRecording' },
+    { name: 'fullWebsiteTest', path: '/api/full-website-test', module: './routes/fullWebsiteTest' },
+  ];
+
+  const loadedRoutes: string[] = [];
+  const failedRoutes: string[] = [];
+
+  for (const config of routeConfigs) {
+    try {
+      const routeModule = await import(config.module);
+      app.use(config.path, routeModule.default);
+      loadedRoutes.push(config.name);
+    } catch (error) {
+      logger.error(`Failed to load route ${config.name}`, LogCategory.SYSTEM, {
+        errorStack: error instanceof Error ? error.stack : undefined,
+        module: config.module,
+        path: config.path
+      });
+      failedRoutes.push(config.name);
+    }
+  }
+
+  logger.info('Route loading completed', LogCategory.SYSTEM, {
+    metadata: {
+      loaded: loadedRoutes,
+      failed: failedRoutes,
+      totalLoaded: loadedRoutes.length,
+      totalFailed: failedRoutes.length
+    }
+  });
+
+  // Only throw error if critical routes failed to load
+  const criticalRoutes = ['auth', 'dashboard', 'projects'];
+  const failedCriticalRoutes = failedRoutes.filter(route => criticalRoutes.includes(route));
+  
+  if (failedCriticalRoutes.length > 0) {
+    throw new Error(`Critical routes failed to load: ${failedCriticalRoutes.join(', ')}`);
+  }
+}
+
+// We'll call setupRoutes() after the WebSocket service is initialized
 
 // WebSocket status endpoint
 app.get('/api/websocket/status', (_req, res) => {
@@ -579,6 +608,18 @@ server.listen(PORT, async () => {
       errorCode: 'REDIS_CONNECTION_FAILED'
     });
     logger.warn('Continuing without Redis (rate limiting will use memory)', LogCategory.SYSTEM);
+  }
+
+  // Setup routes after WebSocket service is initialized
+  try {
+    await setupRoutes();
+    logger.info('API routes loaded successfully', LogCategory.SYSTEM);
+  } catch (error) {
+    logger.error('Failed to setup routes', LogCategory.SYSTEM, {
+      errorStack: error instanceof Error ? error.stack : undefined,
+      errorCode: 'ROUTES_SETUP_ERROR'
+    });
+    throw error; // This will prevent the server from starting
   }
 
   logger.info(`TestBro.ai Backend Server running on port ${PORT}`, LogCategory.SYSTEM, {

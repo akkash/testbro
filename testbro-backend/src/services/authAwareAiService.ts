@@ -500,4 +500,4 @@ export interface AuthRequirement {
   confidence: number;
   suggestedSecret?: string;
   reasoning: string;
-}"
+}

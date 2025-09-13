@@ -29,6 +29,7 @@ export enum LogCategory {
   CACHE = 'cache',
   HEALING = 'healing',
   AI = 'ai',
+  SCHEDULER = 'scheduler',
 }
 
 // Structured log interface

@@ -1272,8 +1272,10 @@ export interface StepPreview {
     highlighted_element: string;
     screenshot_url: string;
   };
-} 
-        'step_start' | 'step_complete' | 'step_failed' | 'error' | 'log' | 
+}
+
+export interface TestBroWebSocketEvent {
+  type: 'step_start' | 'step_complete' | 'step_failed' | 'error' | 'log' |
         'browser_control' | 'recording' | 'playback' | 'live_preview' | 'screenshot' |
         'domain_crawl' | 'visual_checkpoint' | 'healing_progress' | 'healing_completed' | 'element_changed' |
         'system_message' | 'user_event' | 'broadcast_event';

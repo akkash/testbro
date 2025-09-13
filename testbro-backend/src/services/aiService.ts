@@ -299,6 +299,294 @@ Format as JSON with selectors object and recommendations array.`;
 
     return Math.max(0, Math.min(100, score));
   }
+
+  /**
+   * Generate test steps from natural language description
+   * New Phase 1 method for enhanced test step generation
+   */
+  async generateTestSteps(request: {
+    prompt: string;
+    context?: string;
+    target_url?: string;
+    project_id?: string;
+    model?: string;
+  }): Promise<{
+    steps: any[];
+    confidence_score: number;
+    metadata: any;
+  }> {
+    const { prompt, context, target_url, model = 'openai/gpt-4' } = request;
+    
+    // Create comprehensive prompt for test step generation
+    const systemPrompt = `You are an expert test automation engineer. Generate detailed, executable test steps from the provided description.
+
+Instructions:
+1. Break down the test description into clear, logical steps
+2. Each step should have a specific action (click, type, navigate, wait, verify, etc.)
+3. Include appropriate element selectors or descriptions
+4. Add natural language descriptions for each step
+5. Consider timing, validation, and edge cases
+6. Provide reasoning for each step to explain your logic
+
+Output format: JSON array of steps with the following properties:
+- action: The action type (click, type, navigate, wait, verify, select, etc.)
+- element: Element selector or description
+- value: Input value if applicable
+- description: Human-readable description of the step
+- reasoning: Brief explanation of why this step is necessary
+- confidence: Confidence score for this step (0-100)`;
+
+    const userPrompt = `Test Description: ${prompt}
+${context ? `Additional Context: ${context}\n` : ''}
+${target_url ? `Target URL: ${target_url}\n` : ''}
+
+Generate a detailed sequence of test steps.`;
+
+    const startTime = Date.now();
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' },
+      });
+
+      const response = completion.choices[0]?.message?.content;
+      if (!response) {
+        throw new Error('No response from AI service');
+      }
+
+      const processingTime = Date.now() - startTime;
+      const parsedResponse = JSON.parse(response);
+      const steps = parsedResponse.steps || [];
+      const confidence = this.calculateStepsConfidence(steps);
+
+      return {
+        steps,
+        confidence_score: confidence,
+        metadata: {
+          model,
+          prompt,
+          tokens_used: completion.usage?.total_tokens || 0,
+          processing_time_ms: processingTime,
+          step_count: steps.length,
+        },
+      };
+    } catch (error) {
+      console.error('AI test step generation error:', error);
+      throw new Error('Failed to generate test steps from AI');
+    }
+  }
+
+  /**
+   * Analyze requirements and suggest test scenarios
+   * New Phase 1 method for requirements analysis
+   */
+  async analyzeRequirements(requirements: string, context?: string): Promise<{
+    scenarios: any[];
+    coverage_analysis: any;
+    priority_recommendations: string[];
+    metadata: any;
+  }> {
+    const systemPrompt = `You are an expert test analyst specializing in test planning and requirements analysis. Analyze the given requirements and suggest comprehensive test scenarios.
+
+Instructions:
+1. Extract key testable functionality from the requirements
+2. Identify explicit and implicit requirements
+3. Suggest prioritized test scenarios covering critical paths
+4. Identify edge cases and potential risks
+5. Provide coverage analysis
+6. Recommend test priorities
+
+Output format: JSON with scenarios array, coverage_analysis object, and priority_recommendations array.`;
+
+    const userPrompt = `Requirements: ${requirements}
+${context ? `Additional Context: ${context}\n` : ''}
+
+Provide comprehensive test analysis and scenarios.`;
+
+    const startTime = Date.now();
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'openai/gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 2500,
+        response_format: { type: 'json_object' },
+      });
+
+      const response = completion.choices[0]?.message?.content;
+      if (!response) {
+        throw new Error('No response from AI service');
+      }
+
+      const processingTime = Date.now() - startTime;
+      const parsedResponse = JSON.parse(response);
+
+      return {
+        scenarios: parsedResponse.scenarios || [],
+        coverage_analysis: parsedResponse.coverage_analysis || {},
+        priority_recommendations: parsedResponse.priority_recommendations || [],
+        metadata: {
+          model: 'openai/gpt-4',
+          tokens_used: completion.usage?.total_tokens || 0,
+          processing_time_ms: processingTime,
+          scenario_count: (parsedResponse.scenarios || []).length,
+        },
+      };
+    } catch (error) {
+      console.error('AI requirements analysis error:', error);
+      throw new Error('Failed to analyze requirements');
+    }
+  }
+
+  /**
+   * Get AI generation history from database
+   * New Phase 1 method to retrieve generation history
+   */
+  async getGenerationHistory(userId: string, options?: {
+    limit?: number;
+    offset?: number;
+    request_type?: string;
+    project_id?: string;
+  }): Promise<{
+    generations: any[];
+    total: number;
+    metadata: any;
+  }> {
+    try {
+      const { supabaseAdmin } = await import('../config/database');
+      const { limit = 20, offset = 0, request_type, project_id } = options || {};
+
+      // Build query
+      let query = supabaseAdmin
+        .from('ai_generations')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      // Apply filters if provided
+      if (request_type) {
+        query = query.eq('request_type', request_type);
+      }
+
+      if (project_id) {
+        query = query.eq('project_id', project_id);
+      }
+
+      const { data, error, count } = await query;
+
+      if (error) {
+        throw error;
+      }
+
+      return {
+        generations: data || [],
+        total: count || 0,
+        metadata: {
+          limit,
+          offset,
+          has_more: (count || 0) > offset + limit,
+        },
+      };
+    } catch (error) {
+      console.error('Failed to get AI generation history:', error);
+      throw new Error('Failed to retrieve AI generation history');
+    }
+  }
+
+  /**
+   * Log AI generation to database
+   * New Phase 1 method to track AI usage in structured format
+   */
+  async logGeneration(params: {
+    user_id: string;
+    prompt: string;
+    request_type: string;
+    project_id?: string;
+    target_id?: string;
+    model_used: string;
+    response_content: any;
+    confidence_score?: number;
+    tokens_used?: number;
+    processing_time_ms?: number;
+    metadata?: any;
+    generated_test_case_id?: string;
+  }): Promise<{ id: string }> {
+    try {
+      const { supabaseAdmin } = await import('../config/database');
+      
+      const { data, error } = await supabaseAdmin
+        .from('ai_generations')
+        .insert({
+          ...params,
+          created_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          status: 'completed',
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return { id: data.id };
+    } catch (error) {
+      console.error('Failed to log AI generation:', error);
+      // Don't throw here, just log the error
+      // to avoid failing the main operation
+      return { id: 'logging_failed' };
+    }
+  }
+
+  /**
+   * Calculate confidence score for individual steps
+   * Helper for new Phase 1 methods
+   */
+  private calculateStepsConfidence(steps: any[]): number {
+    if (!steps || steps.length === 0) return 50; // Base score
+
+    let score = 70; // Start with higher base for valid steps
+
+    // Check for step completeness
+    const completeSteps = steps.filter(step => 
+      step.action && 
+      (step.element || step.action === 'navigate' || step.action === 'wait') &&
+      step.description
+    );
+    
+    // Adjust score based on completion percentage
+    score += Math.round((completeSteps.length / steps.length) * 20);
+
+    // Bonus for steps with reasoning
+    const stepsWithReasoning = steps.filter(step => step.reasoning);
+    score += Math.round((stepsWithReasoning.length / steps.length) * 10);
+
+    return Math.max(0, Math.min(100, score));
+  }
 }
 
 // Export singleton instance

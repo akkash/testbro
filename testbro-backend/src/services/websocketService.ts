@@ -1,6 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { createServer, Server as HTTPServer } from 'http';
 import { supabaseAdmin } from '../config/database';
+import { logger, LogCategory } from './loggingService';
 import { 
   User, 
   WebSocketEvent, 
@@ -12,12 +13,34 @@ import {
   StandardWebSocketEvent
 } from '../types';
 
+// Enhanced event types for all services
+export type WebSocketEventType = 
+  | 'test-execution-progress'
+  | 'ai-generation-status' 
+  | 'browser-session-updates'
+  | 'visual-test-execution-update'
+  | 'scheduled-test-execution-update'
+  | 'schedule-notifications'
+  | 'real-time-metrics'
+  | 'user-activity-updates'
+  | 'system-notification'
+  | 'connection-status'
+  | 'heartbeat'
+  // Legacy event types
+  | 'execution_progress'
+  | 'step_start'
+  | 'step_complete'
+  | 'execution_complete'
+  | 'error'
+  | 'log';
+
 // Updated to use standardized WebSocket event structure
 export interface TestBroWebSocketEvent extends StandardWebSocketEvent {
-  // Legacy compatibility - inherits from StandardWebSocketEvent
+  type: WebSocketEventType;
   user_id?: string;
 }
 
+// Enhanced client connection interface
 export interface ConnectedClient {
   socket: Socket;
   user: User;
@@ -25,36 +48,102 @@ export interface ConnectedClient {
   browserSessions: Set<string>; // browser session IDs they control
   recordingSessions: Set<string>; // recording session IDs they're monitoring
   playbackSessions: Set<string>; // playback session IDs they're monitoring
+  projectRooms: Set<string>; // project-based room subscriptions
+  organizationRooms: Set<string>; // organization-based room subscriptions
+  connectedAt: Date;
+  lastActivity: Date;
+  isOnline: boolean;
+  heartbeatInterval?: NodeJS.Timeout;
+  connectionMetrics: {
+    messagesReceived: number;
+    messagesSent: number;
+    reconnectCount: number;
+  };
+}
+
+// Rate limiting interface
+export interface RateLimit {
+  windowMs: number;
+  maxRequests: number;
+  requests: Map<string, number[]>;
 }
 
 export class WebSocketService {
+  private static instance: WebSocketService | null = null;
   private io: SocketIOServer;
   private connectedClients = new Map<string, ConnectedClient>();
+  private userPresence = new Map<string, { status: 'online' | 'offline' | 'away', lastSeen: Date }>();
+  private rateLimiter: RateLimit;
+  private metricsInterval: NodeJS.Timeout;
+  private cleanupInterval: NodeJS.Timeout;
 
   constructor(server: HTTPServer) {
+    // Initialize rate limiter
+    this.rateLimiter = {
+      windowMs: 60000, // 1 minute
+      maxRequests: 100, // max 100 messages per minute per user
+      requests: new Map()
+    };
     this.io = new SocketIOServer(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        origin: process.env.FRONTEND_URL?.split(',') || ["http://localhost:5173"],
         methods: ["GET", "POST"],
         credentials: true,
       },
       pingTimeout: 60000,
       pingInterval: 25000,
+      maxHttpBufferSize: 1e6, // 1MB
+      allowEIO3: true,
+      transports: ['websocket', 'polling'],
+      upgradeTimeout: 30000,
     });
 
     this.setupMiddleware();
     this.setupEventHandlers();
+
+    // Start heartbeat and cleanup cycles
+    this.metricsInterval = setInterval(() => this.broadcastSystemMetrics(), 15000);
+    this.cleanupInterval = setInterval(() => this.cleanupInactiveConnections(), 60000);
   }
 
   /**
    * Setup authentication middleware
    */
   private setupMiddleware(): void {
+    // Rate limiting middleware
+    this.io.use((socket: Socket, next) => {
+      const clientIp = socket.handshake.address;
+      if (this.checkRateLimit(clientIp)) {
+        next();
+      } else {
+        logger.warn('Rate limit exceeded for WebSocket connection', LogCategory.WEBSOCKET, {
+          clientIp,
+          socketId: socket.id
+        });
+        next(new Error('Rate limit exceeded'));
+      }
+    });
+
+    // Authentication middleware
     this.io.use(async (socket: Socket, next) => {
       try {
         const token = socket.handshake.auth.token || socket.handshake.query.token as string;
+        const origin = socket.handshake.headers.origin;
+
+        // Validate origin
+        if (origin && !this.isValidOrigin(origin)) {
+          logger.warn('Invalid origin for WebSocket connection', LogCategory.SECURITY, {
+            origin,
+            socketId: socket.id
+          });
+          return next(new Error('Invalid origin'));
+        }
 
         if (!token) {
+          logger.warn('WebSocket connection attempted without token', LogCategory.SECURITY, {
+            origin,
+            socketId: socket.id
+          });
           return next(new Error('Authentication token required'));
         }
 
@@ -62,6 +151,11 @@ export class WebSocketService {
         const { data: userData, error } = await supabaseAdmin.auth.getUser(token);
 
         if (error || !userData.user) {
+          logger.warn('Invalid authentication token for WebSocket', LogCategory.SECURITY, {
+            error: error?.message,
+            socketId: socket.id,
+            origin
+          });
           return next(new Error('Invalid authentication token'));
         }
 
@@ -75,9 +169,18 @@ export class WebSocketService {
           updated_at: userData.user.updated_at,
         };
 
+        logger.debug('WebSocket authentication successful', LogCategory.WEBSOCKET, {
+          userId: userData.user.id,
+          email: userData.user.email,
+          socketId: socket.id
+        });
+
         next();
       } catch (error) {
-        console.error('Socket authentication error:', error);
+        logger.error('Socket authentication error', LogCategory.SECURITY, {
+          error: error instanceof Error ? error.message : error,
+          socketId: socket.id
+        });
         next(new Error('Authentication failed'));
       }
     });
@@ -90,17 +193,44 @@ export class WebSocketService {
     this.io.on('connection', (socket: Socket) => {
       const user = (socket as any).user as User;
 
-      console.log(`User ${user.email} connected with socket ${socket.id}`);
+      logger.info('WebSocket connection established', LogCategory.WEBSOCKET, {
+        userId: user.id,
+        email: user.email,
+        socketId: socket.id
+      });
 
-      // Register connected client
-      this.connectedClients.set(socket.id, {
+      // Create enhanced client record
+      const client: ConnectedClient = {
         socket,
         user,
         subscriptions: new Set(),
         browserSessions: new Set(),
         recordingSessions: new Set(),
         playbackSessions: new Set(),
-      });
+        projectRooms: new Set(),
+        organizationRooms: new Set(),
+        connectedAt: new Date(),
+        lastActivity: new Date(),
+        isOnline: true,
+        connectionMetrics: {
+          messagesReceived: 0,
+          messagesSent: 0,
+          reconnectCount: 0
+        }
+      };
+
+      // Start heartbeat for this client
+      client.heartbeatInterval = setInterval(() => {
+        if (client.isOnline) {
+          socket.emit('heartbeat', { timestamp: new Date().toISOString() });
+        }
+      }, 30000);
+
+      // Register connected client
+      this.connectedClients.set(socket.id, client);
+
+      // Update user presence
+      this.updateUserPresence(user.id, 'online');
 
       // Handle subscription to execution
       socket.on('subscribe_execution', (executionId: string) => {
@@ -178,9 +308,40 @@ export class WebSocketService {
         this.handleReplayControl(socket.id, data);
       });
 
+      // Handle project room subscription
+      socket.on('subscribe_project', (projectId: string) => {
+        this.subscribeToProject(socket.id, projectId);
+      });
+
+      // Handle project room unsubscription
+      socket.on('unsubscribe_project', (projectId: string) => {
+        this.unsubscribeFromProject(socket.id, projectId);
+      });
+
+      // Handle organization room subscription
+      socket.on('subscribe_organization', (organizationId: string) => {
+        this.subscribeToOrganization(socket.id, organizationId);
+      });
+
+      // Handle heartbeat response
+      socket.on('heartbeat_response', (data) => {
+        client.lastActivity = new Date();
+        client.connectionMetrics.messagesReceived++;
+      });
+
+      // Handle user activity updates
+      socket.on('user_activity', (activity) => {
+        this.broadcastUserActivity(user.id, activity);
+      });
+
       // Handle disconnection
-      socket.on('disconnect', () => {
-        console.log(`User ${user.email} disconnected`);
+      socket.on('disconnect', (reason) => {
+        logger.info('WebSocket disconnection', LogCategory.WEBSOCKET, {
+          userId: user.id,
+          email: user.email,
+          socketId: socket.id,
+          reason
+        });
         this.handleDisconnect(socket.id);
       });
 
@@ -535,6 +696,187 @@ export class WebSocketService {
   }
 
   /**
+   * Check rate limit for IP address
+   */
+  private checkRateLimit(clientIp: string): boolean {
+    const now = Date.now();
+    const requests = this.rateLimiter.requests.get(clientIp) || [];
+    
+    // Remove expired requests
+    const validRequests = requests.filter(timestamp => 
+      now - timestamp < this.rateLimiter.windowMs
+    );
+    
+    if (validRequests.length >= this.rateLimiter.maxRequests) {
+      return false;
+    }
+    
+    validRequests.push(now);
+    this.rateLimiter.requests.set(clientIp, validRequests);
+    return true;
+  }
+
+  /**
+   * Validate origin for security
+   */
+  private isValidOrigin(origin: string): boolean {
+    const allowedOrigins = process.env.FRONTEND_URL?.split(',') || ["http://localhost:5173"];
+    return allowedOrigins.includes(origin);
+  }
+
+  /**
+   * Update user presence status
+   */
+  private updateUserPresence(userId: string, status: 'online' | 'offline' | 'away'): void {
+    this.userPresence.set(userId, {
+      status,
+      lastSeen: new Date()
+    });
+    
+    // Broadcast presence update to relevant users
+    this.broadcastPresenceUpdate(userId, status);
+  }
+
+  /**
+   * Subscribe client to project-based room
+   */
+  private subscribeToProject(socketId: string, projectId: string): void {
+    const client = this.connectedClients.get(socketId);
+    if (!client) return;
+
+    client.projectRooms.add(projectId);
+    client.socket.join(`project_${projectId}`);
+
+    logger.debug('Client subscribed to project room', LogCategory.WEBSOCKET, {
+      socketId,
+      projectId,
+      userId: client.user.id
+    });
+  }
+
+  /**
+   * Unsubscribe client from project-based room
+   */
+  private unsubscribeFromProject(socketId: string, projectId: string): void {
+    const client = this.connectedClients.get(socketId);
+    if (!client) return;
+
+    client.projectRooms.delete(projectId);
+    client.socket.leave(`project_${projectId}`);
+
+    logger.debug('Client unsubscribed from project room', LogCategory.WEBSOCKET, {
+      socketId,
+      projectId,
+      userId: client.user.id
+    });
+  }
+
+  /**
+   * Subscribe client to organization-based room
+   */
+  private subscribeToOrganization(socketId: string, organizationId: string): void {
+    const client = this.connectedClients.get(socketId);
+    if (!client) return;
+
+    client.organizationRooms.add(organizationId);
+    client.socket.join(`organization_${organizationId}`);
+
+    logger.debug('Client subscribed to organization room', LogCategory.WEBSOCKET, {
+      socketId,
+      organizationId,
+      userId: client.user.id
+    });
+  }
+
+  /**
+   * Broadcast user activity to relevant rooms
+   */
+  private broadcastUserActivity(userId: string, activity: any): void {
+    const client = Array.from(this.connectedClients.values())
+      .find(c => c.user.id === userId);
+    
+    if (!client) return;
+
+    // Broadcast to all project and organization rooms this user is in
+    client.projectRooms.forEach(projectId => {
+      this.io.to(`project_${projectId}`).emit('user-activity-updates', {
+        user_id: userId,
+        activity,
+        timestamp: new Date().toISOString()
+      });
+    });
+  }
+
+  /**
+   * Broadcast presence updates
+   */
+  private broadcastPresenceUpdate(userId: string, status: 'online' | 'offline' | 'away'): void {
+    const client = Array.from(this.connectedClients.values())
+      .find(c => c.user.id === userId);
+    
+    if (!client) return;
+
+    client.projectRooms.forEach(projectId => {
+      this.io.to(`project_${projectId}`).emit('user-presence-update', {
+        user_id: userId,
+        status,
+        timestamp: new Date().toISOString()
+      });
+    });
+  }
+
+  /**
+   * Broadcast system metrics to all connected clients
+   */
+  private broadcastSystemMetrics(): void {
+    const metrics = {
+      connectedClients: this.connectedClients.size,
+      activeUsers: this.userPresence.size,
+      systemLoad: process.cpuUsage(),
+      memoryUsage: process.memoryUsage(),
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    };
+
+    this.io.emit('real-time-metrics', metrics);
+  }
+
+  /**
+   * Clean up inactive connections
+   */
+  private cleanupInactiveConnections(): void {
+    const now = Date.now();
+    const inactiveThreshold = 5 * 60 * 1000; // 5 minutes
+    
+    for (const [socketId, client] of this.connectedClients.entries()) {
+      if (now - client.lastActivity.getTime() > inactiveThreshold) {
+        logger.info('Cleaning up inactive WebSocket connection', LogCategory.WEBSOCKET, {
+          socketId,
+          userId: client.user.id,
+          inactiveDuration: now - client.lastActivity.getTime()
+        });
+        
+        client.socket.disconnect(true);
+        this.handleDisconnect(socketId);
+      }
+    }
+
+    // Clean up rate limiter data
+    const rateLimitCleanupThreshold = this.rateLimiter.windowMs;
+    for (const [ip, requests] of this.rateLimiter.requests.entries()) {
+      const validRequests = requests.filter(timestamp => 
+        now - timestamp < rateLimitCleanupThreshold
+      );
+      
+      if (validRequests.length === 0) {
+        this.rateLimiter.requests.delete(ip);
+      } else {
+        this.rateLimiter.requests.set(ip, validRequests);
+      }
+    }
+  }
+
+  /**
    * Get connected clients count
    */
   getConnectedClientsCount(): number {
@@ -571,31 +913,36 @@ export class WebSocketService {
   }
 
   /**
-   * Emit event to specific user with standardized structure
+   * Enhanced broadcast to user with event type routing
    */
-  emitToUser(userId: string, event: TestBroWebSocketEvent): void {
+  broadcastToUser(userId: string, eventType: WebSocketEventType, data: any): void {
     // Find all sockets for this user
     for (const [_socketId, client] of this.connectedClients.entries()) {
-      if (client.user.id === userId) {
+      if (client.user.id === userId && client.isOnline) {
         const standardizedEvent: StandardWebSocketEvent = {
-          type: event.type,
-          execution_id: event.execution_id,
-          session_id: event.session_id,
-          step_id: event.step_id,
+          type: eventType as any,
           user_id: userId,
-          data: event.data,
-          timestamp: event.timestamp || new Date().toISOString(),
+          data,
+          timestamp: new Date().toISOString(),
           metadata: {
             source: 'websocket_service',
             version: '1.0',
-            target: 'user_specific',
-            ...event.metadata
+            target: 'user_specific'
           }
         };
         
-        client.socket.emit('user_event', standardizedEvent);
+        client.socket.emit(eventType, standardizedEvent);
+        client.connectionMetrics.messagesSent++;
+        client.lastActivity = new Date();
       }
     }
+  }
+
+  /**
+   * Emit event to specific user with standardized structure (backward compatibility)
+   */
+  emitToUser(userId: string, event: TestBroWebSocketEvent): void {
+    this.broadcastToUser(userId, event.type, event.data);
   }
 
   /**
@@ -636,23 +983,45 @@ export class WebSocketService {
     const client = this.connectedClients.get(socketId);
     if (!client) return;
 
-    console.log(`Cleaning up subscriptions for disconnected socket ${socketId}`);
+    logger.debug('Cleaning up WebSocket client subscriptions', LogCategory.WEBSOCKET, {
+      socketId,
+      userId: client.user.id,
+      subscriptions: client.subscriptions.size,
+      connectionDuration: Date.now() - client.connectedAt.getTime()
+    });
+    
+    // Stop heartbeat interval
+    if (client.heartbeatInterval) {
+      clearInterval(client.heartbeatInterval);
+    }
+    
+    // Update user presence
+    client.isOnline = false;
+    this.updateUserPresence(client.user.id, 'offline');
     
     // Clean up all subscriptions
     client.subscriptions.forEach(executionId => {
       client.socket.leave(`execution_${executionId}`);
     });
     
-    client.browserSessions?.forEach(sessionId => {
+    client.browserSessions.forEach(sessionId => {
       client.socket.leave(`session_${sessionId}`);
     });
     
-    client.recordingSessions?.forEach(sessionId => {
+    client.recordingSessions.forEach(sessionId => {
       client.socket.leave(`session_${sessionId}`);
     });
     
-    client.playbackSessions?.forEach(sessionId => {
+    client.playbackSessions.forEach(sessionId => {
       client.socket.leave(`session_${sessionId}`);
+    });
+
+    client.projectRooms.forEach(projectId => {
+      client.socket.leave(`project_${projectId}`);
+    });
+
+    client.organizationRooms.forEach(organizationId => {
+      client.socket.leave(`organization_${organizationId}`);
     });
 
     // Remove from connected clients
@@ -805,18 +1174,181 @@ export class WebSocketService {
       }
     }
   }
+
+  /**
+   * Get user presence status
+   */
+  getUserPresence(userId: string): { status: 'online' | 'offline' | 'away', lastSeen: Date } | null {
+    return this.userPresence.get(userId) || null;
+  }
+
+  /**
+   * Get all online users
+   */
+  getOnlineUsers(): string[] {
+    const onlineUsers = new Set<string>();
+    for (const client of this.connectedClients.values()) {
+      if (client.isOnline) {
+        onlineUsers.add(client.user.id);
+      }
+    }
+    return Array.from(onlineUsers);
+  }
+
+  /**
+   * Get connection statistics
+   */
+  getConnectionStats(): {
+    totalConnections: number;
+    uniqueUsers: number;
+    averageConnectionDuration: number;
+    messagesSent: number;
+    messagesReceived: number;
+  } {
+    const uniqueUsers = new Set<string>();
+    let totalMessagesSent = 0;
+    let totalMessagesReceived = 0;
+    let totalConnectionDuration = 0;
+    const now = Date.now();
+
+    for (const client of this.connectedClients.values()) {
+      uniqueUsers.add(client.user.id);
+      totalMessagesSent += client.connectionMetrics.messagesSent;
+      totalMessagesReceived += client.connectionMetrics.messagesReceived;
+      totalConnectionDuration += now - client.connectedAt.getTime();
+    }
+
+    return {
+      totalConnections: this.connectedClients.size,
+      uniqueUsers: uniqueUsers.size,
+      averageConnectionDuration: this.connectedClients.size > 0 
+        ? totalConnectionDuration / this.connectedClients.size 
+        : 0,
+      messagesSent: totalMessagesSent,
+      messagesReceived: totalMessagesReceived
+    };
+  }
+
+  /**
+   * Broadcast to project room
+   */
+  broadcastToProject(projectId: string, eventType: WebSocketEventType, data: any): void {
+    const standardizedEvent: StandardWebSocketEvent = {
+      type: eventType as any,
+      data,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        source: 'websocket_service',
+        version: '1.0',
+        target: `project_${projectId}`
+      }
+    };
+
+    this.io.to(`project_${projectId}`).emit(eventType, standardizedEvent);
+  }
+
+  /**
+   * Broadcast to organization room
+   */
+  broadcastToOrganization(organizationId: string, eventType: WebSocketEventType, data: any): void {
+    const standardizedEvent: StandardWebSocketEvent = {
+      type: eventType as any,
+      data,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        source: 'websocket_service',
+        version: '1.0',
+        target: `organization_${organizationId}`
+      }
+    };
+
+    this.io.to(`organization_${organizationId}`).emit(eventType, standardizedEvent);
+  }
+
+  /**
+   * Send system notification
+   */
+  sendSystemNotification(message: string, type: 'info' | 'warning' | 'error' = 'info', targetUsers?: string[]): void {
+    const notification = {
+      message,
+      type,
+      timestamp: new Date().toISOString()
+    };
+
+    if (targetUsers && targetUsers.length > 0) {
+      // Send to specific users
+      targetUsers.forEach(userId => {
+        this.broadcastToUser(userId, 'system-notification', notification);
+      });
+    } else {
+      // Broadcast to all connected clients
+      this.io.emit('system-notification', notification);
+    }
+  }
+
+  /**
+   * Get singleton instance
+   */
+  static getInstance(): WebSocketService | null {
+    return WebSocketService.instance;
+  }
+
+  /**
+   * Set singleton instance (called by initWebSocketService)
+   */
+  static setInstance(instance: WebSocketService): void {
+    WebSocketService.instance = instance;
+  }
+
+  /**
+   * Shutdown WebSocket service
+   */
+  async shutdown(): Promise<void> {
+    logger.info('Shutting down WebSocket service', LogCategory.WEBSOCKET);
+
+    // Clear intervals
+    if (this.metricsInterval) clearInterval(this.metricsInterval);
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+
+    // Disconnect all clients
+    for (const [socketId, client] of this.connectedClients.entries()) {
+      if (client.heartbeatInterval) {
+        clearInterval(client.heartbeatInterval);
+      }
+      client.socket.disconnect(true);
+    }
+
+    // Close Socket.IO server
+    this.io.close();
+    
+    // Clear data structures
+    this.connectedClients.clear();
+    this.userPresence.clear();
+    this.rateLimiter.requests.clear();
+
+    WebSocketService.instance = null;
+    
+    logger.info('WebSocket service shutdown completed', LogCategory.WEBSOCKET);
+  }
 }
 
 // Export singleton pattern
-let websocketService: WebSocketService | null = null;
-
 export const initWebSocketService = (server: HTTPServer): WebSocketService => {
-  if (!websocketService) {
-    websocketService = new WebSocketService(server);
+  if (!WebSocketService.getInstance()) {
+    const instance = new WebSocketService(server);
+    WebSocketService.setInstance(instance);
+    logger.info('WebSocket service initialized', LogCategory.WEBSOCKET, {
+      connectedClients: 0,
+      timestamp: new Date().toISOString()
+    });
   }
-  return websocketService;
+  return WebSocketService.getInstance()!;
 };
 
 export const getWebSocketService = (): WebSocketService | null => {
-  return websocketService;
+  return WebSocketService.getInstance();
 };
+
+// Backward compatibility exports
+export { WebSocketService };
+export default WebSocketService;

@@ -1044,7 +1044,7 @@ router.post('/:id/otp-config',
       });
 
       // Return success with masked configuration
-      const maskedConfig = this.maskSensitiveConfig(config);
+      const maskedConfig = maskSensitiveConfig(config);
       
       res.json({
         data: {
@@ -1070,7 +1070,8 @@ router.post('/:id/otp-config',
         message: 'Failed to configure OTP provider',
       });
     }
-  });
+  })
+);
 
 
 /**

@@ -373,6 +373,165 @@ router.get('/models', asyncHandler(async (req: Request, res: Response) => {
 }));
 
 /**
+ * POST /api/ai/generate-test-steps
+ * Generate test steps from natural language prompt (Phase 1 enhancement)
+ */
+router.post('/generate-test-steps', asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { prompt, context, target_url, project_id, model } = req.body;
+
+  if (!prompt) {
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: 'Prompt is required',
+    });
+  }
+
+  try {
+    const startTime = Date.now();
+    
+    // Generate test steps using enhanced AI service
+    const result = await aiService.generateTestSteps({
+      prompt,
+      context,
+      target_url,
+      project_id,
+      model,
+    });
+
+    const processingTime = Date.now() - startTime;
+
+    // Log AI generation to database
+    await aiService.logGeneration({
+      user_id: userId,
+      prompt,
+      request_type: 'test_step_generation',
+      project_id,
+      model_used: result.metadata.model,
+      response_content: result.steps,
+      confidence_score: result.confidence_score,
+      tokens_used: result.metadata.tokens_used,
+      processing_time_ms: processingTime,
+      metadata: result.metadata,
+    });
+
+    res.json({
+      data: {
+        steps: result.steps,
+        confidence_score: result.confidence_score,
+        metadata: result.metadata,
+      },
+      message: 'Test steps generated successfully',
+    });
+
+  } catch (error) {
+    console.error('AI test step generation error:', error);
+    res.status(500).json({
+      error: 'AI_GENERATION_FAILED',
+      message: 'Failed to generate test steps using AI',
+    });
+  }
+}));
+
+/**
+ * POST /api/ai/analyze-requirements
+ * Analyze requirements and suggest test scenarios (Phase 1 enhancement)
+ */
+router.post('/analyze-requirements', asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { requirements, context, project_id } = req.body;
+
+  if (!requirements) {
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: 'Requirements text is required',
+    });
+  }
+
+  try {
+    const startTime = Date.now();
+    
+    // Analyze requirements using AI service
+    const result = await aiService.analyzeRequirements(requirements, context);
+
+    const processingTime = Date.now() - startTime;
+
+    // Log AI generation to database
+    await aiService.logGeneration({
+      user_id: userId,
+      prompt: requirements,
+      request_type: 'requirement_analysis',
+      project_id,
+      model_used: result.metadata.model,
+      response_content: {
+        scenarios: result.scenarios,
+        coverage_analysis: result.coverage_analysis,
+        priority_recommendations: result.priority_recommendations,
+      },
+      tokens_used: result.metadata.tokens_used,
+      processing_time_ms: processingTime,
+      metadata: result.metadata,
+    });
+
+    res.json({
+      data: {
+        scenarios: result.scenarios,
+        coverage_analysis: result.coverage_analysis,
+        priority_recommendations: result.priority_recommendations,
+        metadata: result.metadata,
+      },
+      message: 'Requirements analyzed successfully',
+    });
+
+  } catch (error) {
+    console.error('AI requirements analysis error:', error);
+    res.status(500).json({
+      error: 'AI_ANALYSIS_FAILED',
+      message: 'Failed to analyze requirements using AI',
+    });
+  }
+}));
+
+/**
+ * GET /api/ai/generation-history
+ * Get AI generation history for user (Phase 1 enhancement)
+ */
+router.get('/generation-history', asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const { 
+    limit, 
+    offset, 
+    request_type, 
+    project_id 
+  } = req.query;
+
+  try {
+    const result = await aiService.getGenerationHistory(userId, {
+      limit: limit ? parseInt(limit as string) : undefined,
+      offset: offset ? parseInt(offset as string) : undefined,
+      request_type: request_type as string,
+      project_id: project_id as string,
+    });
+
+    res.json({
+      data: result.generations,
+      meta: {
+        total: result.total,
+        pagination: result.metadata,
+      },
+      message: 'Generation history retrieved successfully',
+    });
+
+  } catch (error) {
+    console.error('Failed to get AI generation history:', error);
+    res.status(500).json({
+      error: 'DATABASE_ERROR',
+      message: 'Failed to retrieve generation history',
+    });
+  }
+}));
+
+/**
  * GET /api/ai/usage
  * Get AI usage statistics for user
  */
@@ -381,33 +540,35 @@ router.get('/usage', asyncHandler(async (req: Request, res: Response) => {
   const { period = '30d' } = req.query;
 
   try {
-    // Get AI usage logs for the user
-    const { data: usage, error } = await supabaseAdmin
-      .from('ai_usage_logs')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('created_at', getDateFromPeriod(period as string))
-      .order('created_at', { ascending: false });
+    // Get AI generation history from new database table
+    const result = await aiService.getGenerationHistory(userId, {
+      limit: 100,
+    });
 
-    if (error) {
-      return res.status(500).json({
-        error: 'DATABASE_ERROR',
-        message: 'Failed to fetch AI usage statistics',
-      });
-    }
+    const generations = result.generations.filter(gen => {
+      const created = new Date(gen.created_at);
+      const cutoff = new Date(getDateFromPeriod(period as string));
+      return created >= cutoff;
+    });
 
     // Calculate statistics
     const stats = {
-      total_requests: usage?.length || 0,
-      total_tokens: usage?.reduce((sum, log) => sum + (log.tokens_used || 0), 0) || 0,
-      average_confidence: usage?.length ?
-        usage.reduce((sum, log) => sum + (log.confidence_score || 0), 0) / usage.length : 0,
-      requests_by_type: usage?.reduce((acc, log) => {
-        const type = log.request_type || 'unknown';
+      total_requests: generations.length,
+      total_tokens: generations.reduce((sum, gen) => sum + (gen.tokens_used || 0), 0),
+      average_confidence: generations.length ?
+        generations.reduce((sum, gen) => sum + (gen.confidence_score || 0), 0) / generations.length : 0,
+      requests_by_type: generations.reduce((acc, gen) => {
+        const type = gen.request_type || 'unknown';
         acc[type] = (acc[type] || 0) + 1;
         return acc;
-      }, {} as Record<string, number>) || {},
-      recent_requests: usage?.slice(0, 10) || [],
+      }, {} as Record<string, number>),
+      recent_requests: generations.slice(0, 10),
+      processing_time_stats: {
+        average_ms: generations.length ?
+          generations.reduce((sum, gen) => sum + (gen.processing_time_ms || 0), 0) / generations.length : 0,
+        fastest_ms: Math.min(...generations.map(gen => gen.processing_time_ms || 0).filter(t => t > 0)),
+        slowest_ms: Math.max(...generations.map(gen => gen.processing_time_ms || 0)),
+      },
     };
 
     res.json({
